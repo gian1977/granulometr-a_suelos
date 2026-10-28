@@ -78,48 +78,35 @@ if st.button("Calcular Granulometría", type="primary"):
         df.loc[df['Tamiz'] == 'Residuo', '% Que Pasa'] = 0.0
         
         # --- LÓGICA AUTOMÁTICA DE TMA Y TMN BASADA EN LA SERIE COMPLETA ---
-        # Buscamos cuál es el tamiz más grande de los ACTIVOS que SÍ retiene material
-        df_con_material = df[df['Abertura (mm)'] > 0].copy()
-        df_con_material = df_con_material[df_con_material['Peso Retenido (g)'] > 0.001]
+        df_suelos = df[df['Abertura (mm)'] > 0].copy().reset_index(drop=True)
+        df_con_material = df_suelos[df_suelos['Peso Retenido (g)'] > 0.001]
         
         if not df_con_material.empty:
-            # Obtenemos el nombre del primer tamiz real que retuvo peso
             tamiz_primer_retenido = df_con_material.iloc[0]['Tamiz']
-            
-            # Buscamos en qué posición de la SERIE COMPLETA NORMATIVA está ese tamiz
             idx_en_serie_completa = [x[1] for x in serie_completa].index(tamiz_primer_retenido)
             
-            # Si el tamiz que retuvo es el primero absoluto de la norma (3"), el TMA es ese mismo
             if idx_en_serie_completa == 0:
                 tma_mm = serie_completa[idx_en_serie_completa][0]
                 tma_nombre = serie_completa[idx_en_serie_completa][1]
                 idx_tma_evaluacion = idx_en_serie_completa
             else:
-                # Normativa: El TMA es el tamiz inmediatamente superior en la serie estándar (donde pasa el 100%)
                 idx_tma_evaluacion = idx_en_serie_completa - 1
                 tma_mm = serie_completa[idx_tma_evaluacion][0]
                 tma_nombre = serie_completa[idx_tma_evaluacion][1]
             
-            # Determinar TMN: Evaluamos el tamiz inmediatamente inferior al TMA determinado en la serie completa
             if idx_tma_evaluacion + 1 < len(serie_completa):
                 tamiz_inferior_nombre = serie_completa[idx_tma_evaluacion + 1][1]
-                
-                # Buscamos cuánto dio el porcentaje que pasa real en nuestra tabla para ese tamiz inferior
                 fila_inferior_real = df[df['Tamiz'] == tamiz_inferior_nombre]
                 
                 if not fila_inferior_real.empty:
                     pasa_inferior = fila_inferior_real.iloc[0]['% Que Pasa']
-                    
-                    # Criterio estricto: Si pasa entre el 90% y el 99.9%
                     if 90.0 <= pasa_inferior < 100.0:
                         tmn_mm = serie_completa[idx_tma_evaluacion + 1][0]
                         tmn_nombre = tamiz_inferior_nombre
                     else:
-                        # Si es menor al 90%, el TMN es igual al TMA
                         tmn_mm = tma_mm
                         tmn_nombre = tma_nombre
                 else:
-                    # Si el tamiz inmediatamente inferior no se usó en el laboratorio, se asume igual al TMA por seguridad
                     tmn_mm = tma_mm
                     tmn_nombre = tma_nombre
             else:
@@ -146,29 +133,47 @@ if st.button("Calcular Granulometría", type="primary"):
         df_visual = df.copy().round(2)
         st.dataframe(df_visual, use_container_width=True, hide_index=True)
         
-        # --- 4. GRÁFICO SEMILOGARÍTMICO REAL RECORTADO AL TMA ---
+        # --- 4. GRÁFICO SEMILOGARÍTMICO ESTILO PLANILLA ---
         st.header("4. Curva Granulométrica Semilogarítmica")
         
-        # Graficar desde el TMA hacia abajo
-        df_grafico = df[df['Abertura (mm)'] > 0].copy()
-        df_grafico = df_grafico[df_grafico['Abertura (mm)'] <= tma_mm].copy()
+        # Graficar desde el TMA hacia abajo en la serie estándar
+        df_grafico = df_suelos[df_suelos['Abertura (mm)'] <= tma_mm].copy()
         
         if not df_grafico.empty:
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(df_grafico['Abertura (mm)'], df_grafico['% Que Pasa'], marker='o', color='blue', linewidth=2, label='Muestra')
+            fig, ax = plt.subplots(figsize=(11, 5.5))
             
+            # Dibujar la curva del suelo
+            ax.plot(df_grafico['Abertura (mm)'], df_grafico['% Que Pasa'], marker='o', markerfacecolor='white', markeredgecolor='black', color='black', linewidth=1.5, label='Granulometria')
+            
+            # --- LÍNEAS DE CORTE ESTILO PLANILLA EXCEL ---
+            # Línea de corte N° 4 (4.760 mm) - Separación Grava/Arena
+            ax.plot([4.760, 4.760], [-10, 100], color='mediumvioletred', linewidth=2, linestyle='-', label='Grava')
+            ax.plot([4.760, 4.760], [-10, 100], marker='o', markersize=6, color='gold', markeredgecolor='darkred', linestyle='')
+            
+            # Línea de corte N° 200 (0.074 mm) - Separación Arena/Fino
+            ax.plot([0.074, 0.074], [-10, 100], color='indigo', linewidth=2, linestyle='-', label='Areana')
+            ax.plot([0.074, 0.074], [-10, 100], marker='o', markersize=6, color='gold', markeredgecolor='darkred', linestyle='')
+
+            # Configuración estricta de escalas y límites
             ax.set_xscale('log')
-            xlim_max = tma_mm if tma_mm > 0.074 else 0.1
-            ax.set_xlim(xlim_max, 0.074)
-            ax.set_ylim(-5, 105)
             
-            ax.grid(True, which='both', linestyle='--', linewidth=0.5, color='gray')
-            ax.set_xlabel("Diámetro de Partícula (mm) - Escala Logarítmica")
-            ax.set_ylabel("Porcentaje que Pasa (%)")
-            ax.legend(loc='lower left')
+            # Holgura visual automática en eje X: Comienza en el ciclo logarítmico superior al TMA y termina en 0.01 mm
+            lim_izquierdo = 100.0 if tma_mm > 10.0 else 10.0
+            ax.set_xlim(lim_izquierdo, 0.01)
+            ax.set_ylim(-10, 105)
             
-            ax.set_xticks(df_grafico['Abertura (mm)'])
-            ax.set_xticklabels(df_grafico['Tamiz'], rotation=90, fontsize=8)
+            # Cuadrícula logarítmica fina estilo papel técnico
+            ax.grid(True, which='both', linestyle='-', linewidth=0.5, color='lightgray')
+            
+            # Etiquetas de los ejes solicitadas
+            ax.set_xlabel("TAMAÑO DE TAMIZ (MM) - ESC. LOG", fontsize=10, fontweight='bold')
+            ax.set_ylabel("% QUE PASA", fontsize=10, fontweight='bold')
+            ax.legend(loc='upper right', fontsize=8)
+            
+            # Formatear marcas principales en el eje X para que no se amontonen y sigan tu formato (100, 10, 1, 0.1, 0.01)
+            valores_eje_x = [100.0, 10.0, 1.0, 0.1, 0.01]
+            ax.set_xticks(valores_eje_x)
+            ax.set_xticklabels([f"{x:g}" for x in valores_eje_x])
             
             st.pyplot(fig)
         else:
