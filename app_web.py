@@ -79,7 +79,7 @@ if st.button("Calcular Granulometría", type="primary"):
     if porcentaje_error <= 1.0:
         st.success(f"✅ Ensayo Aprobado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Límite normativo <= 1%.")
     else:
-        st.error(f"❌ Ensayo狂echazado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Supera la tolerancia del 1%.")
+        st.error(f"❌ Ensayo Rechazado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Supera la tolerancia del 1%.")
         
     st.dataframe(df_visual, use_container_width=True, hide_index=True)
     
@@ -102,25 +102,21 @@ if st.button("Calcular Granulometría", type="primary"):
         marker=dict(size=6, symbol='circle')
     ))
     
-    # Configuración de los ejes según mecánica de suelos
+    # Configuración limpia de los ejes
     fig.update_layout(
         title="Curva Granulométrica del Suelo",
         xaxis=dict(
             title="Tamaño de Partícula (Abertura en mm) - Escala Logarítmica",
-            type="log",                  # Eje X en escala Logarítmica
-            autorange="reverse",         # Invierte el eje X (Grava a la izquierda, finos a la derecha)
-            dtick=1,                     # Intervalo de cuadrícula logarítmica principales
+            type="log",
+            autorange="reverse",
             gridcolor='lightgray'
         ),
         yaxis=dict(
             title="Porcentaje que Pasa (%) - Escala Normal",
-            range=[-5, 105],             # Rango corregido y asegurado
-            gridcolor='lightgray',
-            dtick=10                     # Línea cada 10%
+            gridcolor='lightgray'
         ),
         plot_bgcolor='white',
-        height=600,
-        margin=dict(l=40, r=40, t=40, b=40)
+        height=600
     )
     
     # Desplegar gráfico en la web
