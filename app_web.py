@@ -36,7 +36,6 @@ for i, (abertura, tamiz) in enumerate(serie_completa):
     label_check = f"Utilizar {tamiz} ({abertura:.3f} mm)"
     label_peso = f"Retenido {tamiz} (g)"
     
-    # Repartir de forma equitativa en las columnas de la interfaz web
     if i % 3 == 0:
         with col1:
             activo = st.checkbox(label_check, value=True, key=f"check_{tamiz}")
@@ -62,51 +61,60 @@ if st.button("Calcular Granulometría", type="primary"):
     if not tamices_activos:
         st.error("❌ Debe seleccionar al menos un tamiz para realizar los cálculos.")
     else:
-        # Estructurar DataFrame dinámico solo con los tamices activos seleccionados + el Residuo
+        # Estructurar DataFrame dinámico
         lista_dinamica = tamices_activos + [(0.000, 'Residuo')]
         df = pd.DataFrame(lista_dinamica, columns=['Abertura (mm)', 'Tamiz'])
         df['Peso Retenido (g)'] = df['Tamiz'].map(pesos_ingresados).fillna(0.0)
         
-        # Control de calidad: verificación de pérdida de masa
+        # Control de calidad
         suma_total_retenido = df['Peso Retenido (g)'].sum()
         error_gramos = masa_total - suma_total_retenido
         porcentaje_error = (abs(error_gramos) / masa_total) * 100
         
-        # Cálculos de columnas normativas
+        # Cálculos de columnas
         df['% Peso Retenido'] = (df['Peso Retenido (g)'] / masa_total) * 100
         df['% Peso Ret. Acumul.'] = df['% Peso Retenido'].cumsum()
         df['% Que Pasa'] = 100 - df['% Peso Ret. Acumul.']
         df.loc[df['Tamiz'] == 'Residuo', '% Que Pasa'] = 0.0
         
-        # --- DETERMINACIÓN CRITERIO NORMATIVO DE TMA Y TMN ---
+        # --- LÓGICA CORREGIDA DE TMA Y TMN (Normativa Chilena) ---
         df_suelos = df[df['Abertura (mm)'] > 0].copy().reset_index(drop=True)
         
-        # 1. Determinar TMA: El tamiz más grande de la serie activa seleccionada que retiene material
-        df_con_material = df_suelos[df_suelos['Peso Retenido (g)'] > 0.0]
+        # Buscamos el PRIMER tamiz de la serie activa que registra retención de material
+        df_con_material = df_suelos[df_suelos['Peso Retenido (g)'] > 0.001]
         
         if not df_con_material.empty:
-            idx_tma_local = df_con_material.index[0]
-            tma_mm = df_suelos.loc[idx_tma_local, 'Abertura (mm)']
-            tma_nombre = df_suelos.loc[idx_tma_local, 'Tamiz']
+            # Obtenemos el índice posicional correcto del primer tamiz con material
+            idx_primer_retenido = df_con_material.index[0]
             
-            # 2. Determinar TMN: Evaluar el tamiz inmediatamente inferior en la serie activa
-            if idx_tma_local + 1 < len(df_suelos):
-                idx_inferior = idx_tma_local + 1
+            # Si el primer tamiz con retención es el más grande de los ACTIVOS, el TMA será ese mismo
+            if idx_primer_retenido == 0:
+                tma_mm = df_suelos.loc[idx_primer_retenido, 'Abertura (mm)']
+                tma_nombre = df_suelos.loc[idx_primer_retenido, 'Tamiz']
+                idx_tma_real = 0
+            else:
+                # Normativa: El TMA es el menor tamiz por el que pasa el 100% (el inmediatamente superior al que retiene)
+                idx_tma_real = idx_primer_retenido - 1
+                tma_mm = df_suelos.loc[idx_tma_real, 'Abertura (mm)']
+                tma_nombre = df_suelos.loc[idx_tma_real, 'Tamiz']
+            
+            # Determinar TMN: Evaluamos el tamiz inmediatamente inferior al TMA en la serie activa
+            if idx_tma_real + 1 < len(df_suelos):
+                idx_inferior = idx_tma_real + 1
                 pasa_inferior = df_suelos.loc[idx_inferior, '% Que Pasa']
                 
-                # Criterio: Si el % que pasa está entre 90.0% y 99.9%
+                # Criterio estricto solicitado: inmediato inferior si pasa entre 90% y 99.9%
                 if 90.0 <= pasa_inferior < 100.0:
                     tmn_mm = df_suelos.loc[idx_inferior, 'Abertura (mm)']
                     tmn_nombre = df_suelos.loc[idx_inferior, 'Tamiz']
                 else:
-                    # Si es menor al 90%, el TMN es igual al TMA
+                    # Si el % que pasa es menor al 90%, el TMN es igual al TMA
                     tmn_mm = tma_mm
                     tmn_nombre = tma_nombre
             else:
                 tmn_mm = tma_mm
                 tmn_nombre = tma_nombre
         else:
-            # Caso por defecto si no hay retención en ningún tamiz activo
             tma_nombre, tma_mm = 'N° 200', 0.074
             tmn_nombre, tmn_mm = 'N° 200', 0.074
 
@@ -130,7 +138,6 @@ if st.button("Calcular Granulometría", type="primary"):
         # --- 4. GRÁFICO SEMILOGARÍTMICO REAL RECORTADO AL TMA ---
         st.header("4. Curva Granulométrica Semilogarítmica")
         
-        # Filtrado estricto: Graficar desde el TMA hacia abajo en la serie activa
         df_grafico = df_suelos[df_suelos['Abertura (mm)'] <= tma_mm].copy()
         
         if not df_grafico.empty:
@@ -138,7 +145,6 @@ if st.button("Calcular Granulometría", type="primary"):
             ax.plot(df_grafico['Abertura (mm)'], df_grafico['% Que Pasa'], marker='o', color='blue', linewidth=2, label='Muestra')
             
             ax.set_xscale('log')
-            # Ajustar los límites: Si el TMA es el N° 200 evita errores de límites iguales
             xlim_max = tma_mm if tma_mm > 0.074 else 0.1
             ax.set_xlim(xlim_max, 0.074)
             ax.set_ylim(-5, 105)
@@ -153,4 +159,4 @@ if st.button("Calcular Granulometría", type="primary"):
             
             st.pyplot(fig)
         else:
-            st.warning("No hay suficientes datos válidos por encima de 0.074 mm para graficar con el recorte.")
+            st.warning("No hay suficientes datos para graficar con el recorte.")
