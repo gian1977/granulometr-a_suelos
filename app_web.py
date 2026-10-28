@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 
 # Configuración del título de la página web
 st.set_page_config(page_title="Mecánica de Suelos - Granulometría", layout="wide")
@@ -28,12 +29,11 @@ datos_tamices = [
 
 pesos_ingresados = {}
 
-# Distribuimos los campos de entrada en 3 columnas para que visualmente se vea ordenado
+# Distribuimos los campos de entrada en 3 columnas
 col1, col2, col3 = st.columns(3)
 
 for i, (abertura, tamiz) in enumerate(datos_tamices):
     label = f"{tamiz} ({abertura:.3f} mm)"
-    # Repartir los tamices equitativamente entre las 3 columnas de la interfaz
     if i % 3 == 0:
         with col1:
             pesos_ingresados[tamiz] = st.number_input(label, min_value=0.0, value=0.0, step=0.1, key=tamiz)
@@ -44,7 +44,6 @@ for i, (abertura, tamiz) in enumerate(datos_tamices):
         with col3:
             pesos_ingresados[tamiz] = st.number_input(label, min_value=0.0, value=0.0, step=0.1, key=tamiz)
 
-# El residuo lo dejamos abajo por separado como en la planilla original
 st.markdown("---")
 pesos_ingresados['Residuo'] = st.number_input("Residuo / Fondo (g)", min_value=0.0, value=0.0, step=0.1, key='Residuo')
 
@@ -68,19 +67,61 @@ if st.button("Calcular Granulometría", type="primary"):
     df['% Que Pasa'] = 100 - df['% Peso Ret. Acumul.']
     df.loc[df['Tamiz'] == 'Residuo', '% Que Pasa'] = 0.0
     
-    # Redondeos
-    df['% Peso Retenido'] = df['% Peso Retenido'].round(2)
-    df['% Peso Ret. Acumul.'] = df['% Peso Ret. Acumul.'].round(2)
-    df['% Que Pasa'] = df['% Que Pasa'].round(2)
+    # Redondeos para visualización de la tabla
+    df_visual = df.copy()
+    df_visual['% Peso Retenido'] = df_visual['% Peso Retenido'].round(2)
+    df_visual['% Peso Ret. Acumul.'] = df_visual['% Peso Ret. Acumul.'].round(2)
+    df_visual['% Que Pasa'] = df_visual['% Que Pasa'].round(2)
     
     # --- 4. PRESENTACIÓN DE RESULTADOS ---
     st.header("3. Matriz de Resultados")
     
-    # Cuadros de alerta para el control de calidad
     if porcentaje_error <= 1.0:
-        st.success(f"✅ Ensayo Aprobado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Está dentro del límite de tolerancia del 1%.")
+        st.success(f"✅ Ensayo Aprobado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Límite normativo <= 1%.")
     else:
-        st.error(f"❌ Ensayo Rechazado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Supera el límite máximo permitido del 1%. Se sugiere revisar pesajes.")
+        st.error(f"❌ Ensayo Rechazado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Supera la tolerancia del 1%.")
         
-    # Mostrar la tabla formateada en la interfaz web
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df_visual, use_container_width=True, hide_index=True)
+    
+    # --- 5. GENERACIÓN DE CURVA GRANULOMÉTRICA (SEMILOGARÍTMICA) ---
+    st.header("4. Curva Granulométrica")
+    
+    # Filtramos para el gráfico: eliminamos el Residuo (0 mm) para evitar errores logarítmicos en eje X
+    df_grafico = df[df['Abertura (mm)'] > 0].copy()
+    
+    # Creamos la figura interactiva
+    fig = go.Figure()
+    
+    # Agregar la línea de la muestra
+    fig.add_trace(go.Scatter(
+        x=df_grafico['Abertura (mm)'],
+        y=df_grafico['% Que Pasa'],
+        mode='lines+markers',
+        name='Muestra Ensaye',
+        line=dict(color='blue', width=3),
+        marker=dict(size=6, symbol='circle')
+    ))
+    
+    # Configuración de los ejes según mecánica de suelos
+    fig.update_layout(
+        title="Curva Granulométrica del Suelo",
+        xaxis=dict(
+            title="Tamaño de Partícula (Abertura en mm) - Escala Logarítmica",
+            type="log",                  # Eje X en escala Logarítmica
+            autorange="reverse",         # Invierte el eje X (Grava a la izquierda, finos a la derecha)
+            dtick=1,                     # Intervalo de cuadrícula logarítmica principales
+            gridcolor='lightgray'
+        ),
+        yaxis=dict(
+            title="Porcentaje que Pasa (%) - Escala Normal",
+            range=[-5, 105],             # Rango fijo corregido de 0% a 100% con holgura visual
+            gridcolor='lightgray',
+            dtick=10                     # Línea cada 10%
+        ),
+        plot_bgcolor='white',
+        height=600,
+        margin=dict(l=40, r=40, t=40, b=40)
+    )
+    
+    # Desplegar gráfico en la web
+    st.plotly_chart(fig, use_container_width=True)
