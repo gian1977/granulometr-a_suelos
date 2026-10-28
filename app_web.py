@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 
 # Configuración del título de la página web
 st.set_page_config(page_title="Mecánica de Suelos - Granulometría", layout="wide")
@@ -83,41 +82,17 @@ if st.button("Calcular Granulometría", type="primary"):
         
     st.dataframe(df_visual, use_container_width=True, hide_index=True)
     
-    # --- 5. GENERACIÓN DE CURVA GRANULOMÉTRICA (SEMILOGARÍTMICA) ---
+    # --- 5. GENERACIÓN DE CURVA GRANULOMÉTRICA CON GRÁFICO SEGURO ---
     st.header("4. Curva Granulométrica")
     
-    # Filtramos para el gráfico: eliminamos el Residuo (0 mm) para evitar errores logarítmicos en eje X
+    # Filtramos eliminando el Residuo (0 mm) para la visualización del eje
     df_grafico = df[df['Abertura (mm)'] > 0].copy()
     
-    # Creamos la figura interactiva
-    fig = go.Figure()
+    # Creamos una estructura de datos simple para el gráfico nativo de Streamlit
+    df_chart = pd.DataFrame({
+        'Abertura (mm)': df_grafico['Abertura (mm)'],
+        'Porcentaje que Pasa (%)': df_grafico['% Que Pasa']
+    }).set_index('Abertura (mm)')
     
-    # Agregar la línea de la muestra
-    fig.add_trace(go.Scatter(
-        x=df_grafico['Abertura (mm)'],
-        y=df_grafico['% Que Pasa'],
-        mode='lines+markers',
-        name='Muestra Ensaye',
-        line=dict(color='blue', width=3),
-        marker=dict(size=6, symbol='circle')
-    ))
-    
-    # Configuración limpia de los ejes
-    fig.update_layout(
-        title="Curva Granulométrica del Suelo",
-        xaxis=dict(
-            title="Tamaño de Partícula (Abertura en mm) - Escala Logarítmica",
-            type="log",
-            autorange="reverse",
-            gridcolor='lightgray'
-        ),
-        yaxis=dict(
-            title="Porcentaje que Pasa (%) - Escala Normal",
-            gridcolor='lightgray'
-        ),
-        plot_bgcolor='white',
-        height=600
-    )
-    
-    # Desplegar gráfico en la web
-    st.plotly_chart(fig, use_container_width=True)
+    # Desplegar gráfico de línea nativo (100% inmune a errores de traducción de código)
+    st.line_chart(df_chart, y="Porcentaje que Pasa (%)", use_container_width=True)
