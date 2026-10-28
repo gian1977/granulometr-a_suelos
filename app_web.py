@@ -79,7 +79,7 @@ if st.button("Calcular Granulometría", type="primary"):
     if porcentaje_error <= 1.0:
         st.success(f"✅ Ensayo Aprobado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Límite normativo <= 1%.")
     else:
-        st.error(f"❌ Ensayo Rechazado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Supera la tolerancia del 1%.")
+        st.error(f"❌ Ensayo狂echazado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Supera la tolerancia del 1%.")
         
     st.dataframe(df_visual, use_container_width=True, hide_index=True)
     
@@ -114,7 +114,7 @@ if st.button("Calcular Granulometría", type="primary"):
         ),
         yaxis=dict(
             title="Porcentaje que Pasa (%) - Escala Normal",
-            range=[-5, 105],             # Rango fijo corregido de 0% a 100% con holgura visual
+            range=[-5, 105],             # Rango corregido y asegurado
             gridcolor='lightgray',
             dtick=10                     # Línea cada 10%
         ),
