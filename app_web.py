@@ -16,7 +16,7 @@ masa_total = st.sidebar.number_input("Masa Total de muestra a tamizar (g)", min_
 st.header("2. Configuración de Tamices y Registro de Pesos")
 st.write("Active los tamices que utilizó en el ensayo e ingrese sus pesos retenidos en gramos:")
 
-# Serie completa ASTM de referencia
+# Serie completa ASTM de referencia ordenada de mayor a menor
 serie_completa = [
     (76.200, '3"'), (63.500, '2 1/2"'), (50.600, '2"'), (38.100, '1 1/2"'),
     (25.400, '1"'), (19.050, '3/4"'), (12.700, '1/2"'), (9.525, '3/8"'),
@@ -77,38 +77,49 @@ if st.button("Calcular Granulometría", type="primary"):
         df['% Que Pasa'] = 100 - df['% Peso Ret. Acumul.']
         df.loc[df['Tamiz'] == 'Residuo', '% Que Pasa'] = 0.0
         
-        # --- LÓGICA CORREGIDA DE TMA Y TMN (Normativa Chilena) ---
-        df_suelos = df[df['Abertura (mm)'] > 0].copy().reset_index(drop=True)
-        
-        # Buscamos el PRIMER tamiz de la serie activa que registra retención de material
-        df_con_material = df_suelos[df_suelos['Peso Retenido (g)'] > 0.001]
+        # --- LÓGICA AUTOMÁTICA DE TMA Y TMN BASADA EN LA SERIE COMPLETA ---
+        # Buscamos cuál es el tamiz más grande de los ACTIVOS que SÍ retiene material
+        df_con_material = df[df['Abertura (mm)'] > 0].copy()
+        df_con_material = df_con_material[df_con_material['Peso Retenido (g)'] > 0.001]
         
         if not df_con_material.empty:
-            # Obtenemos el índice posicional correcto del primer tamiz con material
-            idx_primer_retenido = df_con_material.index[0]
+            # Obtenemos el nombre del primer tamiz real que retuvo peso
+            tamiz_primer_retenido = df_con_material.iloc[0]['Tamiz']
             
-            # Si el primer tamiz con retención es el más grande de los ACTIVOS, el TMA será ese mismo
-            if idx_primer_retenido == 0:
-                tma_mm = df_suelos.loc[idx_primer_retenido, 'Abertura (mm)']
-                tma_nombre = df_suelos.loc[idx_primer_retenido, 'Tamiz']
-                idx_tma_real = 0
+            # Buscamos en qué posición de la SERIE COMPLETA NORMATIVA está ese tamiz
+            idx_en_serie_completa = [x[1] for x in serie_completa].index(tamiz_primer_retenido)
+            
+            # Si el tamiz que retuvo es el primero absoluto de la norma (3"), el TMA es ese mismo
+            if idx_en_serie_completa == 0:
+                tma_mm = serie_completa[idx_en_serie_completa][0]
+                tma_nombre = serie_completa[idx_en_serie_completa][1]
+                idx_tma_evaluacion = idx_en_serie_completa
             else:
-                # Normativa: El TMA es el menor tamiz por el que pasa el 100% (el inmediatamente superior al que retiene)
-                idx_tma_real = idx_primer_retenido - 1
-                tma_mm = df_suelos.loc[idx_tma_real, 'Abertura (mm)']
-                tma_nombre = df_suelos.loc[idx_tma_real, 'Tamiz']
+                # Normativa: El TMA es el tamiz inmediatamente superior en la serie estándar (donde pasa el 100%)
+                idx_tma_evaluacion = idx_en_serie_completa - 1
+                tma_mm = serie_completa[idx_tma_evaluacion][0]
+                tma_nombre = serie_completa[idx_tma_evaluacion][1]
             
-            # Determinar TMN: Evaluamos el tamiz inmediatamente inferior al TMA en la serie activa
-            if idx_tma_real + 1 < len(df_suelos):
-                idx_inferior = idx_tma_real + 1
-                pasa_inferior = df_suelos.loc[idx_inferior, '% Que Pasa']
+            # Determinar TMN: Evaluamos el tamiz inmediatamente inferior al TMA determinado en la serie completa
+            if idx_tma_evaluacion + 1 < len(serie_completa):
+                tamiz_inferior_nombre = serie_completa[idx_tma_evaluacion + 1][1]
                 
-                # Criterio estricto solicitado: inmediato inferior si pasa entre 90% y 99.9%
-                if 90.0 <= pasa_inferior < 100.0:
-                    tmn_mm = df_suelos.loc[idx_inferior, 'Abertura (mm)']
-                    tmn_nombre = df_suelos.loc[idx_inferior, 'Tamiz']
+                # Buscamos cuánto dio el porcentaje que pasa real en nuestra tabla para ese tamiz inferior
+                fila_inferior_real = df[df['Tamiz'] == tamiz_inferior_nombre]
+                
+                if not fila_inferior_real.empty:
+                    pasa_inferior = fila_inferior_real.iloc[0]['% Que Pasa']
+                    
+                    # Criterio estricto: Si pasa entre el 90% y el 99.9%
+                    if 90.0 <= pasa_inferior < 100.0:
+                        tmn_mm = serie_completa[idx_tma_evaluacion + 1][0]
+                        tmn_nombre = tamiz_inferior_nombre
+                    else:
+                        # Si es menor al 90%, el TMN es igual al TMA
+                        tmn_mm = tma_mm
+                        tmn_nombre = tma_nombre
                 else:
-                    # Si el % que pasa es menor al 90%, el TMN es igual al TMA
+                    # Si el tamiz inmediatamente inferior no se usó en el laboratorio, se asume igual al TMA por seguridad
                     tmn_mm = tma_mm
                     tmn_nombre = tma_nombre
             else:
@@ -138,7 +149,9 @@ if st.button("Calcular Granulometría", type="primary"):
         # --- 4. GRÁFICO SEMILOGARÍTMICO REAL RECORTADO AL TMA ---
         st.header("4. Curva Granulométrica Semilogarítmica")
         
-        df_grafico = df_suelos[df_suelos['Abertura (mm)'] <= tma_mm].copy()
+        # Graficar desde el TMA hacia abajo
+        df_grafico = df[df['Abertura (mm)'] > 0].copy()
+        df_grafico = df_grafico[df_grafico['Abertura (mm)'] <= tma_mm].copy()
         
         if not df_grafico.empty:
             fig, ax = plt.subplots(figsize=(10, 5))
