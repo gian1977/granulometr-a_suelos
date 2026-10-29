@@ -1,10 +1,22 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.drawing.image import Image as OpenpyxlImage
 
 st.set_page_config(page_title="Mecanica de Suelos - Granulometria", layout="wide")
 st.title("📊 Ensayo de Granulometria por Tamizado")
 st.subheader("Manual de Carreteras v.8.202.3 / Adaptacion NCh 165")
+
+# Inicialización de estados de sesión para asegurar transferencia inmune de datos al Excel
+if "df_calculado" not in st.session_state:
+    st.session_state.df_calculado = None
+if "fig_grafico" not in st.session_state:
+    st.session_state.fig_grafico = None
+if "meta_calculos" not in st.session_state:
+    st.session_state.meta_calculos = {"tma": '3"', "tmn": '3"', "error": 0.0, "banda": "TM-25", "clasificacion": "Sin Calcular"}
 
 st.sidebar.header("1. Datos del Cuarteo")
 masa_total = st.sidebar.number_input("Masa Total de muestra a tamizar (g)", min_value=0.1, value=4500.0, step=1.0)
@@ -142,12 +154,11 @@ if st.button("Calcular Granulometria", type="primary"):
         if porcentaje_error <= 1.0:
             st.success(f"✅ Ensayo Aprobado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%).")
         else:
-            st.error(f"❌ Ensayo Rechazado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%).")
+            st.error(f"❌ Ensayo狂 Rchazado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%).")
             
         df_visual = df.copy().round(2)
         st.dataframe(df_visual, use_container_width=True, hide_index=True)
 
-        # Base de datos completa, integra y corregida con ceros reales de la Tabla 8.101.1.B
         diccionario_bandas = {
             "TM-50a": [
                 {"abertura": 50.600, "minimo": 100.0, "maximo": 100.0}, {"abertura": 25.400, "minimo": 55.0, "maximo": 100.0},
@@ -183,7 +194,7 @@ if st.button("Calcular Granulometria", type="primary"):
             "TM-40c": [
                 {"abertura": 38.100, "minimo": 100.0, "maximo": 100.0}, {"abertura": 25.400, "minimo": 80.0, "maximo": 100.0},
                 {"abertura": 9.525, "minimo": 50.0, "maximo": 80.0}, {"abertura": 4.760, "minimo": 35.0, "maximo": 65.0},
-                {"abertura": 2.000, "minimo": 25.0, "maximo": 50.0}, {"abertura": 0.300, "minimo": 15.0, "maximo": 30.0},
+                {"abertura": 2.000, "minimo": 25.0, "max运行": 50.0}, {"abertura": 0.300, "minimo": 15.0, "maximo": 30.0},
                 {"abertura": 0.074, "minimo": 5.0, "maximo": 20.0}
             ],
             "TM-25": [
@@ -194,7 +205,6 @@ if st.button("Calcular Granulometria", type="primary"):
             ]
         }
         
-        # ALGORITMO DE SELECCIÓN INTELIGENTE DE BANDA SEGÚN TMA Y FINOS DE LA MUESTRA
         nombre_banda_activa = "TM-25"
         if tma_mm > 25.405 and tma_mm <= 38.105:
             if pasa_n200 <= 3.05: nombre_banda_activa = "TM-40a"
@@ -243,6 +253,19 @@ if st.button("Calcular Granulometria", type="primary"):
             ax.set_xticklabels([f"{x:g}" for x in valores_eje_x])
             st.pyplot(fig)
             
+            # --- GUARDADO EN SESSION STATE PARA GARANTIZAR PERSISTENCIA TOTAL ---
+            st.session_state.df_calculado = df.copy()
+            st.session_state.fig_grafico = fig
+            st.session_state.meta_calculos = {
+                "tma": tma_nombre,
+                "tmn": tmn_nombre,
+                "error": porcentaje_error,
+                "banda": nombre_banda_activa,
+                "clasificacion": clasificacion_mop,
+                "masa_ini": masa_total
+            }
+            # --------------------------------------------------------------------
+            
             fuera_de_banda = False
             st.subheader("📋 Evaluacion de Conformidad Vial")
             
@@ -264,217 +287,214 @@ if st.button("Calcular Granulometria", type="primary"):
         else:
             st.warning("No hay suficientes datos para graficar.")
 
-import io
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.drawing.image import Image as OpenpyxlImage
-
 # =============================================================================
-# MÓDULO DE EXPORTACIÓN A EXCEL (ESTRUCTURA PERSISTENTE MOP 8.102.1.A)
+# MÓDULO DE EXPORTACIÓN RIGIDA A EXCEL (MOP 8.102.1.A / ESCUELA INACAP)
 # =============================================================================
-
 st.markdown("---")
-st.subheader("📄 Generación de Informe Oficial")
+st.subheader("📄 Módulo de Reporte Oficial")
 
-# Inicializar variable en el estado de sesión para controlar la persistencia del archivo
-if "excel_procesado" not in st.session_state:
-    st.session_state.excel_procesado = None
-if "cert_name" not in st.session_state:
-    st.session_state.cert_name = "001-2026"
+if "excel_descarga" not in st.session_state:
+    st.session_state.excel_descarga = None
+if "num_certificado" not in st.session_state:
+    st.session_state.num_certificado = "002"
 
-# Formulario para metadatos del encabezado
 with st.container():
-    col_meta1, col_meta2 = st.columns(2)
-    with col_meta1:
-        cert_no = st.text_input("Certificado de ensaye N°:", value=st.session_state.cert_name)
-        camino_obra = st.text_input("Camino u Obra:", "Ruta 5 Norte - Tramo Copiapó")
-        responsable = st.text_input("Responsable ensaye:", "Prof. Mecánica de Suelos")
-    with col_meta2:
-        f_muestreo = st.date_input("Fecha de muestreo:")
-        f_ensaye = st.date_input("Fecha de ensaye:")
-        jefe_lab = st.text_input("V°B° Jefe Laboratorio:", "Ing. Control de Calidad")
+    c_m1, c_m2 = st.columns(2)
+    with c_m1:
+        cert_input = st.text_input("Certificado de ensaye N°:", value=st.session_state.num_certificado)
+        camino = st.text_input("Camino u Obra:", "Ruta 5 Norte - Ampliación Terceras Pistas")
+        operador = st.text_input("Responsable ensaye:", "Prof. Mecánica de Suelos")
+    with c_m2:
+        f_m = st.date_input("Fecha de muestreo:")
+        f_e = st.date_input("Fecha de ensaye:")
+        jefe = st.text_input("V°B° Jefe Laboratorio:", "Ing. Control de Calidad")
 
-# PASO 1: Botón técnico para compilar la matriz y el gráfico semilogarítmico
-if st.button("📊 Compilar Datos y Procesar Planilla Excel"):
-    st.session_state.cert_name = cert_no
+if st.button("📊 Compilar y Generar Planilla Oficial de Laboratorio"):
+    st.session_state.num_certificado = cert_input
     
-    # Crear libro y configurar hoja
     wb = Workbook()
     ws = wb.active
     ws.title = "Granulometría MOP"
     
-    # --- CORRECCIÓN RIGIDA PARA LÍNEAS DE CUADRICULA ---
     try:
-        ws.views.sheetView[0].showGridLines = True
+        ws.views.sheetView.showGridLines = True
     except Exception:
         pass
-    # ----------------------------------------------------
+        
+    # Definición de tipografías y estilos clásicos de la planilla piloto
+    f_logo = Font(name="Arial", size=16, bold=True, color="000000")
+    f_tit = Font(name="Arial", size=11, bold=True)
+    f_sub = Font(name="Arial", size=9, bold=True)
+    f_body = Font(name="Arial", size=9)
+    f_form = Font(name="Arial", size=9, italic=True)
     
-    # Estilos Globales
-    font_title = Font(name="Arial", size=11, bold=True)
-    font_sub = Font(name="Arial", size=9, bold=True)
-    font_body = Font(name="Arial", size=9)
-    font_formula = Font(name="Arial", size=8, italic=True, color="555555")
-    
-    fill_header = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
-    thin_border = Border(
+    fill_h = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    border_fino = Border(
         left=Side(style='thin', color='000000'), right=Side(style='thin', color='000000'),
         top=Side(style='thin', color='000000'), bottom=Side(style='thin', color='000000')
     )
     
-    align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    align_right = Alignment(horizontal='right', vertical='center')
-
-    # Reconstrucción del Encabezado MOP
-    ws.merge_cells('B1:E3')
-    ws['B1'] = "ENSAYO GRANULOMÉTRICO DE SUELOS\n\n8.102.1.A"
-    ws['B1'].font = font_title
-    ws['B1'].alignment = align_center
-    ws['B1'].fill = fill_header
+    al_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    al_left = Alignment(horizontal='left', vertical='center')
+    al_right = Alignment(horizontal='right', vertical='center')
     
-    ws['F1'] = "MANUAL DE CARRETERAS - VOL. N° 8"
-    ws['F1'].font = font_sub
-    ws['F2'] = "PAG. 1 de 1"
-    ws['F2'].font = font_body
-    ws['F3'] = "Ver. 002"
-    ws['F3'].font = font_body
+    # 1. ENCABEZADO OFICIAL EN ESPEJO (B1:G3)
+    ws.merge_cells('B1:C3')
+    ws['B1'] = "inacap"
+    ws['B1'].font = f_logo
+    ws['B1'].alignment = al_center
+    ws['B1'].border = border_fino
     
-    for row in range(1, 4):
-        for col in range(2, 7):
-            ws.cell(row=row, column=col).border = thin_border
-
-    # Bloque de Metadatos
-    metadata = [
-        ("Certificado de ensaye N°:", cert_no, "Fecha de muestreo :", str(f_muestreo)),
-        ("Camino u Obra:", camino_obra, "Fecha de ensaye :", str(f_ensaye)),
-        ("TMA muestra de ensaye :", f"{st.session_state.get('tma', 0)} mm", "Banda Vial Activada:", str(st.session_state.get('banda_activa', 'S/B'))),
-        ("TMN calculado:", f"{st.session_state.get('tmn', 0)} mm", "Clasificación/Criterio:", "Ajustado a Banda")
-    ]
+    ws.merge_cells('D1:E3')
+    ws['D1'] = "ENSAYO GRANULOMÉTRICO DE SUELOS\n\n8.102.1.A"
+    ws['D1'].font = f_tit
+    ws['D1'].alignment = al_center
+    ws['D1'].border = border_fino
     
-    current_row = 5
-    for m in metadata:
-        ws.cell(row=current_row, column=2, value=m[0]).font = font_sub
-        ws.cell(row=current_row, column=3, value=m[1]).font = font_body
-        ws.cell(row=current_row, column=5, value=m[2]).font = font_sub
-        ws.cell(row=current_row, column=6, value=m[3]).font = font_body
-        current_row += 1
-
-    # Tabla Dinámica de Tamizado
-    headers_tabla = ["Abertura mm", "Tamiz", "Masa Retenida (g)", "% Retenido", "% Acumulado", "% Que Pasa"]
-    start_row_tabla = 10
+    ws['F1'] = "MANUAL DE CARRETERAS"
+    ws['F2'] = "VOL. N° 8"
+    ws['F3'] = f"PAG. 1 de 1  /  Ver. {cert_input}"
     
-    for c_idx, h in enumerate(headers_tabla, start=2):
-        cell = ws.cell(row=start_row_tabla, column=c_idx, value=h)
-        cell.font = font_sub
-        cell.fill = fill_header
-        cell.alignment = align_center
-        cell.border = thin_border
+    for r in range(1, 4):
+        for c in range(2, 8):
+            ws.cell(row=r, column=c).border = border_fino
+            if c >= 6:
+                ws.cell(row=r, column=c).font = f_sub
+                ws.cell(row=r, column=c).alignment = al_center
 
-    df_activa = None
-    for var_name in ['df', 'df_resultado', 'df_gran', 'datos_tabla', 'df_final']:
-        if var_name in globals():
-            df_activa = globals()[var_name]
-            break
-            
-    if df_activa is None:
-        for key in st.session_state.keys():
-            if isinstance(st.session_state[key], pd.DataFrame):
-                df_activa = st.session_state[key]
-                break
+    # 2. BLOQUE GENERAL Y CUARTEO (Fila 5 a 9)
+    ws['B5'] = "Certificado de ensaye N°:"
+    ws['C5'] = cert_input
+    ws['F5'] = "Fecha de muestreo:"
+    ws['G5'] = str(f_m)
+    
+    ws['B6'] = "Fecha de ensaye:"
+    ws['C6'] = str(f_e)
+    ws['F6'] = "Camino u Obra:"
+    ws['G6'] = camino
+    
+    ws['B8'] = "1. Cuarteo:"
+    ws['B8'].font = f_tit
+    
+    ws['B9'] = "TMA muestra de ensaye:"
+    ws['C9'] = f"{st.session_state.meta_calculos['tma']}"
+    ws['F9'] = "Masa Total de muestra a tamizar:"
+    ws['G9'] = st.session_state.meta_calculos.get('masa_ini', 0.0)
+    ws['G9'].number_format = '0.0'
 
-    if df_activa is not None:
-        row_idx = start_row_tabla + 1
-        for index, row in df_activa.iterrows():
-            ws.cell(row=row_idx, column=2, value=row.iloc[0]).alignment = align_center
-            ws.cell(row=row_idx, column=3, value=str(row.iloc[1])).alignment = align_center
-            ws.cell(row=row_idx, column=4, value=row.iloc[2]).alignment = align_right
-            ws.cell(row=row_idx, column=5, value=row.iloc[3]).alignment = align_right
-            ws.cell(row=row_idx, column=6, value=row.iloc[4]).alignment = align_right
-            ws.cell(row=row_idx, column=7, value=row.iloc[5]).alignment = align_right
+    for r in range(5, 10):
+        if ws.cell(row=r, column=2).value: ws.cell(row=r, column=2).font = f_sub
+        if ws.cell(row=r, column=3).value: ws.cell(row=r, column=3).font = f_body
+        if ws.cell(row=r, column=5).value: ws.cell(row=r, column=5).font = f_sub
+        if ws.cell(row=r, column=6).value: ws.cell(row=r, column=6).font = f_sub
+        if ws.cell(row=r, column=7).value: ws.cell(row=r, column=7).font = f_body
+
+    # 3. TABLA DE TAMIZADO Y REGISTROS (Fila 11)
+    ws['B11'] = "2. Granulometría"
+    ws['B11'].font = f_tit
+    
+    headers = ["Abertura\nmm", "Tamiz", "Masa\n(g)", "% Retenido", "% Acumulado", "% Que\nPasa"]
+    for idx, h in enumerate(headers, start=2):
+        cell = ws.cell(row=12, column=idx, value=h)
+        cell.font = f_sub
+        cell.fill = fill_h
+        cell.alignment = al_center
+        cell.border = border_fino
+
+    # Inyección condicionada y segura de filas calculadas reales
+    row_actual = 13
+    if st.session_state.df_calculado is not None:
+        for idx, row_df in st.session_state.df_calculado.iterrows():
+            ws.cell(row=row_actual, column=2, value=row_df.iloc[0]).alignment = al_center
+            ws.cell(row=row_actual, column=3, value=str(row_df.iloc[1])).alignment = al_center
+            ws.cell(row=row_actual, column=4, value=row_df.iloc[2]).alignment = al_right
+            ws.cell(row=row_actual, column=5, value=row_df.iloc[3]).alignment = al_right
+            ws.cell(row=row_actual, column=6, value=row_df.iloc[4]).alignment = al_right
+            ws.cell(row=row_actual, column=7, value=row_df.iloc[5]).alignment = al_right
             
             for c in range(2, 8):
-                ws.cell(row=row_idx, column=c).font = font_body
-                ws.cell(row=row_idx, column=c).border = thin_border
+                ws.cell(row=row_actual, column=c).font = f_body
+                ws.cell(row=row_actual, column=c).border = border_fino
                 if c >= 4:
-                    try:
-                        ws.cell(row=row_idx, column=c).number_format = '0.0'
-                    except:
-                        pass
-            row_idx += 1
+                    ws.cell(row=row_actual, column=c).number_format = '0.0'
+            row_actual += 1
     else:
-        row_idx = start_row_tabla + 1
-        ws.cell(row=row_idx, column=2, value="Esperando datos del backend...").font = font_formula
-        row_idx += 1
+        ws.cell(row=row_actual, column=2, value="[Ejecute 'Calcular Granulometría' en la web para volcar datos]").alignment = al_left
+        ws.merge_cells(start_row=row_actual, start_column=2, end_row=row_actual, end_column=7)
+        row_actual += 1
 
-    # Totales y Alertas
-    ws.cell(row=row_idx, column=3, value="Totales:").font = font_sub
-    ws.cell(row=row_idx, column=4, value=f"=SUM(D{start_row_tabla+1}:D{row_idx-1})").font = font_sub
-    ws.cell(row=row_idx, column=4).border = thin_border
+    # Totales y Cómputo de Error
+    ws.cell(row=row_actual, column=3, value="Totales:").font = f_sub
+    if st.session_state.df_calculado is not None:
+        ws.cell(row=row_actual, column=4, value=f"=SUM(D13:D{row_actual-1})").font = f_sub
+    else:
+        ws.cell(row=row_actual, column=4, value=0.0).font = f_sub
+    ws.cell(row=row_actual, column=4).border = border_fino
+    ws.cell(row=row_actual, column=4).number_format = '0.0'
     
-    row_idx += 1
-    ws.cell(row=row_idx, column=3, value="% Error:").font = font_sub
-    ws.cell(row=row_idx, column=4, value=st.session_state.get('error_gran', 0.0)).font = font_body
-    ws.cell(row=row_idx, column=4).number_format = '0.00'
-    ws.cell(row=row_idx, column=4).border = thin_border
+    row_actual += 1
+    ws.cell(row=row_actual, column=3, value="% Error:").font = f_sub
+    ws.cell(row=row_actual, column=4, value=st.session_state.meta_calculos['error']).font = f_body
+    ws.cell(row=row_actual, column=4).border = border_fino
+    ws.cell(row=row_actual, column=4).number_format = '0.00'
     
-    # Transcripción Fiel de Fórmulas en Formato Unicode
-    row_idx += 2
-    formulas_text = [
-        "𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂 − 𝑻𝒐𝒕𝒂𝒍 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐",
-        "𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂",
-        "𝑴𝒂𝒔𝒂 𝑹𝒆𝒕𝒆𝒏. 𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂",
-        "𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂 𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂 𝒙 𝟏𝟎𝟎"
-    ]
-    ws.cell(row=row_idx, column=2, value=f"% 𝜺 = 𝑽𝒂𝒍𝒐𝒓 𝑨𝒃𝒔𝒐𝒍𝒖𝒕𝒐 (  {formulas_text[0]}  /  {formulas_text[1]}  ) x 100 (%)").font = font_formula
-    row_idx += 2
-    ws.cell(row=row_idx, column=2, value=f"% 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐 = (  {formulas_text[2]}  /  {formulas_text[3]}  )").font = font_formula
-    row_idx += 2
-    ws.cell(row=row_idx, column=2, value="% 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒂𝒄𝒖𝒎𝒖𝒍𝒂𝒅𝒐 = % 𝒓𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒆𝒏 𝒕𝒂𝒎𝒊𝒛 + % 𝒓𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒂𝒄𝒖𝒎𝒖𝒍. 𝒂𝒏𝒕𝒆𝒓𝒊𝒐𝒓").font = font_formula
-    row_idx += 2
-    ws.cell(row=row_idx, column=2, value="% 𝑨𝒄𝒖𝒎𝒖𝒍𝒂𝒅𝒐 𝒒𝒖𝒆 𝑷𝒂𝒔𝒂 = 𝟏𝟎𝟎 − % 𝑹𝒆𝒕𝒆𝒏.𝑨𝒄𝒖𝒎𝒖𝒍. 𝒆𝒏 𝒕𝒂𝒎𝒊𝒛").font = font_formula
+    # 4. TRANSCRIPCIÓN ESTRUCTURADA EN DOS PISOS (FRACCIÓN VERDADERA DEL PDF)
+    row_actual += 2
+    ws.cell(row=row_actual, column=2, value="                                              𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂  −  𝑻𝒐𝒕𝒂𝒍 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐").font = f_form
+    row_actual += 1
+    ws.cell(row=row_actual, column=2, value="  % 𝜺  =  𝑽𝒂𝒍𝒐𝒓  𝑨𝒃𝒔𝒐𝒍𝒖𝒕𝒐  (  ───────────────────────────────────────────────────  )  𝒙  𝟏𝟎𝟎  (%)").font = f_form
+    row_actual += 1
+    ws.cell(row=row_actual, column=2, value="                                                            𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂").font = f_form
+    
+    row_actual += 2
+    ws.cell(row=row_actual, column=2, value="                                          𝑴𝒂𝒔𝒂  𝑹𝒆𝒕𝒆𝒏.  𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂").font = f_form
+    row_actual += 1
+    ws.cell(row=row_actual, column=2, value="  %  𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐  =  ───────────────────────────────────────────────────  𝒙  𝟏𝟎0").font = f_form
+    row_actual += 1
+    ws.cell(row=row_actual, column=2, value="                                    𝑴𝒂𝒔𝒂  𝑻𝒐𝒕𝒂𝒍  𝒅𝒆  𝑴𝒖𝒆𝒔𝒕𝒓𝒂  𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂").font = f_form
+    
+    row_actual += 2
+    ws.cell(row=row_actual, column=2, value="  % 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒂𝒄𝒖𝒎𝒖𝒍𝒂𝒅𝒐  =  % 𝒓𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒆𝒏 𝒕𝒂𝒎𝒊𝒛  +  % 𝒓𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒂𝒄𝒖𝒎𝒖𝒍. 𝒂𝒏𝒕𝒆𝒓𝒊𝒐𝒓").font = f_form
+    row_actual += 2
+    ws.cell(row=row_actual, column=2, value="  % 𝑨𝒄𝒖𝒎𝒖𝒍𝒂𝒅𝒐 𝒒𝒖𝒆 𝑷𝒂𝒔𝒂  =  𝟏𝟎𝟎  −  % 𝑹𝒆𝒕𝒆𝒏. 𝑨𝒄𝒖𝒎𝒖𝒍. 𝒆𝒏 𝒕𝒂𝒎𝒊𝒛").font = f_form
 
-    # Firmas
-    row_idx += 2
-    ws.cell(row=row_idx, column=2, value=f"Responsable ensaye: {responsable}").font = font_body
-    ws.cell(row=row_idx+1, column=2, value=f"V°B° Jefe Laboratorio: {jefe_lab}").font = font_body
+    # 5. INYECCIÓN VERTICAL INMUNE DE LA CURVA GRANULOMÉTRICA
+    row_actual += 2
+    ws.cell(row=row_actual, column=2, value="Curva Granulométrica Oficial").font = f_tit
+    
+    if st.session_state.fig_grafico is not None:
+        img_buf = io.BytesIO()
+        st.session_state.fig_grafico.savefig(img_buf, format='png', dpi=140, bbox_inches='tight')
+        img_buf.seek(0)
+        xl_img = OpenpyxlImage(img_buf)
+        ws.add_image(xl_img, f'B{row_actual + 1}')
+        row_actual += 28
+        
+    # 6. CUADRO DE RESPONSABILIDADES Y CONTROL DE CALIDAD
+    row_actual += 2
+    ws.cell(row=row_actual, column=2, value=f"Responsable ensaye: {operador}").font = f_body
+    ws.cell(row=row_actual+2, column=2, value=f"V°B° Jefe Laboratorio: {jefe}").font = f_body
 
-    # Inyección Inmune del Gráfico Activo de la App
-    if 'fig' in globals() or 'fig' in st.session_state:
-        fig_activa = globals().get('fig', st.session_state.get('fig'))
-        if fig_activa is not None:
-            img_buf = io.BytesIO()
-            fig_activa.savefig(img_buf, format='png', dpi=150, bbox_inches='tight')
-            img_buf.seek(0)
-            xl_img = OpenpyxlImage(img_buf)
-            ws.add_image(xl_img, 'I4')
-
-        # Ajuste manual y rígido del ancho de las columnas (idéntico a la planilla piloto)
+    # Dimensionamiento manual rígido de celdas
     ws.column_dimensions['A'].width = 3
-    ws.column_dimensions['B'].width = 15  # Abertura mm
-    ws.column_dimensions['C'].width = 15  # Tamiz
-    ws.column_dimensions['D'].width = 18  # Masa Retenida
-    ws.column_dimensions['E'].width = 14  # % Retenido
-    ws.column_dimensions['F'].width = 14  # % Acumulado
-    ws.column_dimensions['G'].width = 14  # % Que Pasa
-    ws.column_dimensions['H'].width = 4   # Espacio separador
+    ws.column_dimensions['B'].width = 15
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 18
+    ws.column_dimensions['E'].width = 14
+    ws.column_dimensions['F'].width = 16
+    ws.column_dimensions['G'].width = 24
 
-
-    # Almacenar el archivo binario final en la sesión persistente
     excel_file = io.BytesIO()
     wb.save(excel_file)
     excel_file.seek(0)
-    st.session_state.excel_procesado = excel_file.getvalue()
-    st.toast("✅ ¡Planilla compilada con éxito!", icon="📊")
+    st.session_state.excel_descarga = excel_file.getvalue()
+    st.toast("✅ ¡Planilla oficial MOP generada e integrada con éxito!", icon="📊")
 
-# PASO 2: El botón de descarga real lee del estado y no desaparece al hacer clic
-if st.session_state.excel_procesado is not None:
-    st.info("🎉 El informe técnico ya está listo para ser descargado.")
+if st.session_state.excel_descarga is not None:
+    st.info("🎉 El informe oficial bajo la Norma 8.102.1.A se encuentra listo.")
     st.download_button(
-        label="📥 Descargar *.xlsx Certificado MOP",
-        data=st.session_state.excel_procesado,
-        file_name=f"Informe_Granulometria_{st.session_state.cert_name}.xlsx",
+        label="📥 Descargar Planilla Excel Certificada",
+        data=st.session_state.excel_descarga,
+        file_name=f"Informe_Granulometria_MOP_{st.session_state.num_certificado}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
