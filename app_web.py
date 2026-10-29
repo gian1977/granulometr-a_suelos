@@ -154,7 +154,7 @@ if st.button("Calcular Granulometria", type="primary"):
         if porcentaje_error <= 1.0:
             st.success(f"✅ Ensayo Aprobado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%).")
         else:
-            st.error(f"❌ Ensayo狂 Rchazado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%).")
+            st.error(f"❌ Ensayo Rechazado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%).")
             
         df_visual = df.copy().round(2)
         st.dataframe(df_visual, use_container_width=True, hide_index=True)
@@ -194,7 +194,7 @@ if st.button("Calcular Granulometria", type="primary"):
             "TM-40c": [
                 {"abertura": 38.100, "minimo": 100.0, "maximo": 100.0}, {"abertura": 25.400, "minimo": 80.0, "maximo": 100.0},
                 {"abertura": 9.525, "minimo": 50.0, "maximo": 80.0}, {"abertura": 4.760, "minimo": 35.0, "maximo": 65.0},
-                {"abertura": 2.000, "minimo": 25.0, "max运行": 50.0}, {"abertura": 0.300, "minimo": 15.0, "maximo": 30.0},
+                {"abertura": 2.000, "minimo": 25.0, "maximo": 50.0}, {"abertura": 0.300, "minimo": 15.0, "maximo": 30.0},
                 {"abertura": 0.074, "minimo": 5.0, "maximo": 20.0}
             ],
             "TM-25": [
@@ -253,7 +253,7 @@ if st.button("Calcular Granulometria", type="primary"):
             ax.set_xticklabels([f"{x:g}" for x in valores_eje_x])
             st.pyplot(fig)
             
-            # --- GUARDADO EN SESSION STATE PARA GARANTIZAR PERSISTENCIA TOTAL ---
+            # --- GUARDADO PERSISTENTE EN SESSION STATE ---
             st.session_state.df_calculado = df.copy()
             st.session_state.fig_grafico = fig
             st.session_state.meta_calculos = {
@@ -264,7 +264,6 @@ if st.button("Calcular Granulometria", type="primary"):
                 "clasificacion": clasificacion_mop,
                 "masa_ini": masa_total
             }
-            # --------------------------------------------------------------------
             
             fuera_de_banda = False
             st.subheader("📋 Evaluacion de Conformidad Vial")
@@ -288,7 +287,7 @@ if st.button("Calcular Granulometria", type="primary"):
             st.warning("No hay suficientes datos para graficar.")
 
 # =============================================================================
-# MÓDULO DE EXPORTACIÓN RIGIDA A EXCEL (MOP 8.102.1.A / ESCUELA INACAP)
+# MÓDULO DE EXPORTACIÓN RIGIDA A EXCEL (DISEÑO ESPECÍFICO LISTO PARA IMPRIMIR)
 # =============================================================================
 st.markdown("---")
 st.subheader("📄 Módulo de Reporte Oficial")
@@ -321,12 +320,11 @@ if st.button("📊 Compilar y Generar Planilla Oficial de Laboratorio"):
     except Exception:
         pass
         
-    # Definición de tipografías y estilos clásicos de la planilla piloto
-    f_logo = Font(name="Arial", size=16, bold=True, color="000000")
-    f_tit = Font(name="Arial", size=11, bold=True)
-    f_sub = Font(name="Arial", size=9, bold=True)
-    f_body = Font(name="Arial", size=9)
-    f_form = Font(name="Arial", size=9, italic=True)
+    f_logo = Font(name="Arial", size=14, bold=True, color="000000")
+    f_tit = Font(name="Arial", size=10, bold=True)
+    f_sub = Font(name="Arial", size=8, bold=True)
+    f_body = Font(name="Arial", size=8)
+    f_form = Font(name="Arial", size=8, italic=True)
     
     fill_h = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
     border_fino = Border(
@@ -338,31 +336,33 @@ if st.button("📊 Compilar y Generar Planilla Oficial de Laboratorio"):
     al_left = Alignment(horizontal='left', vertical='center')
     al_right = Alignment(horizontal='right', vertical='center')
     
-    # 1. ENCABEZADO OFICIAL EN ESPEJO (B1:G3)
+    # AJUSTE AJUSTED EN ESPEJO DEL ENCABEZADO (Mapeo estricto del PDF)
     ws.merge_cells('B1:C3')
     ws['B1'] = "inacap"
     ws['B1'].font = f_logo
     ws['B1'].alignment = al_center
     ws['B1'].border = border_fino
     
-    ws.merge_cells('D1:E3')
+    # Título centralizado combinando las columnas D, E y F
+    ws.merge_cells('D1:F3')
     ws['D1'] = "ENSAYO GRANULOMÉTRICO DE SUELOS\n\n8.102.1.A"
     ws['D1'].font = f_tit
     ws['D1'].alignment = al_center
     ws['D1'].border = border_fino
     
-    ws['F1'] = "MANUAL DE CARRETERAS"
-    ws['F2'] = "VOL. N° 8"
-    ws['F3'] = f"PAG. 1 de 1  /  Ver. {cert_input}"
+    # Columna G (Última de la tabla) recibe de manera exclusiva los datos de vialidad del MOP
+    ws['G1'] = "MANUAL DE CARRETERAS"
+    ws['G2'] = "VOL. N° 8"
+    ws['G3'] = f"PAG. 1 de 1 / Ver. {cert_input}"
     
     for r in range(1, 4):
         for c in range(2, 8):
             ws.cell(row=r, column=c).border = border_fino
-            if c >= 6:
+            if c == 7:
                 ws.cell(row=r, column=c).font = f_sub
                 ws.cell(row=r, column=c).alignment = al_center
 
-    # 2. BLOQUE GENERAL Y CUARTEO (Fila 5 a 9)
+    # Datos Generales y Cuarteo
     ws['B5'] = "Certificado de ensaye N°:"
     ws['C5'] = cert_input
     ws['F5'] = "Fecha de muestreo:"
@@ -383,13 +383,13 @@ if st.button("📊 Compilar y Generar Planilla Oficial de Laboratorio"):
     ws['G9'].number_format = '0.0'
 
     for r in range(5, 10):
-        if ws.cell(row=r, column=2).value: ws.cell(row=r, column=2).font = f_sub
-        if ws.cell(row=r, column=3).value: ws.cell(row=r, column=3).font = f_body
-        if ws.cell(row=r, column=5).value: ws.cell(row=r, column=5).font = f_sub
-        if ws.cell(row=r, column=6).value: ws.cell(row=r, column=6).font = f_sub
-        if ws.cell(row=r, column=7).value: ws.cell(row=r, column=7).font = f_body
+        if r != 7:
+            ws.cell(row=r, column=2).font = f_sub
+            ws.cell(row=r, column=3).font = f_body
+            ws.cell(row=r, column=6).font = f_sub
+            ws.cell(row=r, column=7).font = f_body
 
-    # 3. TABLA DE TAMIZADO Y REGISTROS (Fila 11)
+    # Estructura del Tamizado (Fila 11)
     ws['B11'] = "2. Granulometría"
     ws['B11'].font = f_tit
     
@@ -401,7 +401,6 @@ if st.button("📊 Compilar y Generar Planilla Oficial de Laboratorio"):
         cell.alignment = al_center
         cell.border = border_fino
 
-    # Inyección condicionada y segura de filas calculadas reales
     row_actual = 13
     if st.session_state.df_calculado is not None:
         for idx, row_df in st.session_state.df_calculado.iterrows():
@@ -418,12 +417,7 @@ if st.button("📊 Compilar y Generar Planilla Oficial de Laboratorio"):
                 if c >= 4:
                     ws.cell(row=row_actual, column=c).number_format = '0.0'
             row_actual += 1
-    else:
-        ws.cell(row=row_actual, column=2, value="[Ejecute 'Calcular Granulometría' en la web para volcar datos]").alignment = al_left
-        ws.merge_cells(start_row=row_actual, start_column=2, end_row=row_actual, end_column=7)
-        row_actual += 1
 
-    # Totales y Cómputo de Error
     ws.cell(row=row_actual, column=3, value="Totales:").font = f_sub
     if st.session_state.df_calculado is not None:
         ws.cell(row=row_actual, column=4, value=f"=SUM(D13:D{row_actual-1})").font = f_sub
@@ -438,60 +432,59 @@ if st.button("📊 Compilar y Generar Planilla Oficial de Laboratorio"):
     ws.cell(row=row_actual, column=4).border = border_fino
     ws.cell(row=row_actual, column=4).number_format = '0.00'
     
-    # 4. TRANSCRIPCIÓN ESTRUCTURADA EN DOS PISOS (FRACCIÓN VERDADERA DEL PDF)
+    # COMPACTACIÓN ESTRECHA DE FÓRMULAS DE DOS PISOS (Centradas al ancho de la tabla)
     row_actual += 2
-    ws.cell(row=row_actual, column=2, value="                                              𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂  −  𝑻𝒐𝒕𝒂𝒍 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐").font = f_form
+    ws.cell(row=row_actual, column=2, value="                                   𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂  −  𝑻𝒐𝒕𝒂𝒍 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐").font = f_form
     row_actual += 1
-    ws.cell(row=row_actual, column=2, value="  % 𝜺  =  𝑽𝒂𝒍𝒐𝒓  𝑨𝒃𝒔𝒐𝒍𝒖𝒕𝒐  (  ───────────────────────────────────────────────────  )  𝒙  𝟏𝟎𝟎  (%)").font = f_form
+    ws.cell(row=row_actual, column=2, value="  % 𝜺  =  𝑽𝒂𝒍𝒐𝒓 𝑨𝒃𝒔𝒐𝒍𝒖𝒕𝒐 ( ─────────────────────────────────────────── ) 𝒙 𝟏𝟎𝟎 (%)").font = f_form
     row_actual += 1
-    ws.cell(row=row_actual, column=2, value="                                                            𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂").font = f_form
+    ws.cell(row=row_actual, column=2, value="                                                 𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂").font = f_form
     
     row_actual += 2
-    ws.cell(row=row_actual, column=2, value="                                          𝑴𝒂𝒔𝒂  𝑹𝒆𝒕𝒆𝒏.  𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂").font = f_form
+    ws.cell(row=row_actual, column=2, value="                               𝑴𝒂𝒔𝒂  𝑹𝒆𝒕𝒆𝒏.  𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂").font = f_form
     row_actual += 1
-    ws.cell(row=row_actual, column=2, value="  %  𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐  =  ───────────────────────────────────────────────────  𝒙  𝟏𝟎0").font = f_form
+    ws.cell(row=row_actual, column=2, value="  % 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐  =  ─────────────────────────────────────────── 𝒙 𝟏𝟎𝟎").font = f_form
     row_actual += 1
-    ws.cell(row=row_actual, column=2, value="                                    𝑴𝒂𝒔𝒂  𝑻𝒐𝒕𝒂𝒍  𝒅𝒆  𝑴𝒖𝒆𝒔𝒕𝒓𝒂  𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂").font = f_form
+    ws.cell(row=row_actual, column=2, value="                         𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝑴𝒖𝒆𝒔𝒕𝒓𝒂 𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂").font = f_form
     
     row_actual += 2
     ws.cell(row=row_actual, column=2, value="  % 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒂𝒄𝒖𝒎𝒖𝒍𝒂𝒅𝒐  =  % 𝒓𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒆𝒏 𝒕𝒂𝒎𝒊𝒛  +  % 𝒓𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒂𝒄𝒖𝒎𝒖𝒍. 𝒂𝒏𝒕𝒆𝒓𝒊𝒐𝒓").font = f_form
     row_actual += 2
     ws.cell(row=row_actual, column=2, value="  % 𝑨𝒄𝒖𝒎𝒖𝒍𝒂𝒅𝒐 𝒒𝒖𝒆 𝑷𝒂𝒔𝒂  =  𝟏𝟎𝟎  −  % 𝑹𝒆𝒕𝒆𝒏. 𝑨𝒄𝒖𝒎𝒖𝒍. 𝒆𝒏 𝒕𝒂𝒎𝒊𝒛").font = f_form
 
-    # 5. INYECCIÓN VERTICAL INMUNE DE LA CURVA GRANULOMÉTRICA
+    # REDUCCIÓN RIGIDA DE LA GRÁFICA PARA CORRESPONDER A HOJA CARTA / A4 VERTICAL
     row_actual += 2
     ws.cell(row=row_actual, column=2, value="Curva Granulométrica Oficial").font = f_tit
     
     if st.session_state.fig_grafico is not None:
         img_buf = io.BytesIO()
-        st.session_state.fig_grafico.savefig(img_buf, format='png', dpi=140, bbox_inches='tight')
+        st.session_state.fig_grafico.savefig(img_buf, format='png', dpi=110, bbox_inches='tight')
         img_buf.seek(0)
         xl_img = OpenpyxlImage(img_buf)
         ws.add_image(xl_img, f'B{row_actual + 1}')
-        row_actual += 28
+        row_actual += 20  # Avance proporcional exacto al nuevo tamaño reducido
         
-    # 6. CUADRO DE RESPONSABILIDADES Y CONTROL DE CALIDAD
     row_actual += 2
     ws.cell(row=row_actual, column=2, value=f"Responsable ensaye: {operador}").font = f_body
     ws.cell(row=row_actual+2, column=2, value=f"V°B° Jefe Laboratorio: {jefe}").font = f_body
 
-    # Dimensionamiento manual rígido de celdas
+    # Anchos fijos optimizados para una sola hoja vertical limpia
     ws.column_dimensions['A'].width = 3
-    ws.column_dimensions['B'].width = 15
-    ws.column_dimensions['C'].width = 15
-    ws.column_dimensions['D'].width = 18
-    ws.column_dimensions['E'].width = 14
-    ws.column_dimensions['F'].width = 16
-    ws.column_dimensions['G'].width = 24
+    ws.column_dimensions['B'].width = 12  # Abertura
+    ws.column_dimensions['C'].width = 12  # Tamiz
+    ws.column_dimensions['D'].width = 15  # Masa
+    ws.column_dimensions['E'].width = 13  # % Ret
+    ws.column_dimensions['F'].width = 13  # % Acum
+    ws.column_dimensions['G'].width = 24  # % Pasa / Info MOP
 
     excel_file = io.BytesIO()
     wb.save(excel_file)
     excel_file.seek(0)
     st.session_state.excel_descarga = excel_file.getvalue()
-    st.toast("✅ ¡Planilla oficial MOP generada e integrada con éxito!", icon="📊")
+    st.toast("✅ ¡Planilla optimizada para impresión generada con éxito!", icon="📊")
 
 if st.session_state.excel_descarga is not None:
-    st.info("🎉 El informe oficial bajo la Norma 8.102.1.A se encuentra listo.")
+    st.info("🎉 El informe oficial optimizado para impresión A4/Carta está listo.")
     st.download_button(
         label="📥 Descargar Planilla Excel Certificada",
         data=st.session_state.excel_descarga,
