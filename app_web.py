@@ -177,7 +177,7 @@ if st.button("Calcular Granulometria", type="primary"):
             "TM-40b": [
                 {"abertura": 38.100, "minimo": 100.0, "maximo": 100.0}, {"abertura": 25.400, "minimo": 80.0, "maximo": 100.0},
                 {"abertura": 9.525, "minimo": 50.0, "maximo": 80.0}, {"abertura": 4.760, "minimo": 35.0, "maximo": 65.0},
-                {"abertura": 2.000, "minimo": 25.0, "max技巧": 50.0}, {"abertura": 0.300, "minimo": 10.0, "maximo": 30.0},
+                {"abertura": 2.000, "minimo": 25.0, "maximo": 50.0}, {"abertura": 0.300, "minimo": 10.0, "maximo": 30.0},
                 {"abertura": 0.074, "minimo": 5.0, "maximo": 15.0}
             ],
             "TM-40c": [
