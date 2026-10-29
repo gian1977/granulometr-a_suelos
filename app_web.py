@@ -51,10 +51,33 @@ if st.button("Calcular Granulometria", type="primary"):
     if not tamices_activos:
         st.error("❌ Debe seleccionar al menos un tamiz para realizar los calculos.")
     else:
-        lista_dinamica = tamices_activos + [(0.000, 'Residuo')]
+        # Detectar de forma estricta cual es el primer tamiz activo que si tiene peso retenido
+        idx_primer_retenido_completo = -1
+        for indice, (ab, nom) in enumerate(serie_completa):
+            if pesos_ingresados.get(nom, 0.0) > 0.001:
+                idx_primer_retenido_completo = indice
+                break
+        
+        # LÓGICA DE INYECCIÓN AUTOMÁTICA DEL LÍMITE DE CONTROL VIAL
+        tamices_a_procesar = list(tamices_activos)
+        
+        if idx_primer_retenido_completo > 0:
+            ab_control, nom_control = serie_completa[idx_primer_retenido_completo - 1]
+            # Si el tamiz que debe marcar 100% que pasa no esta en los activos del alumno, lo inyectamos solo
+            existe_en_activos = any(nom == nom_control for ab, nom in tamices_a_procesar)
+            if not existe_en_activos:
+                tamices_a_procesar.insert(0, (ab_control, nom_control))
+                pesos_ingresados[nom_control] = 0.0
+        
+        # Ordenar los tamices resultantes de mayor a menor abertura
+        tamices_a_procesar = sorted(tamices_a_procesar, key=lambda x: x[0], reverse=True)
+        
+        # Armar el DataFrame dinamico con la inyeccion automatica incluida
+        lista_dinamica = tamices_a_procesar + [(0.000, 'Residuo')]
         df = pd.DataFrame(lista_dinamica, columns=['Abertura (mm)', 'Tamiz'])
         df['Peso Retenido (g)'] = df['Tamiz'].map(pesos_ingresados).fillna(0.0)
         
+        # Calculo de perdidas y matrices de control
         suma_total_retenido = df['Peso Retenido (g)'].sum()
         error_gramos = masa_total - suma_total_retenido
         porcentaje_error = (abs(error_gramos) / masa_total) * 100
@@ -66,49 +89,36 @@ if st.button("Calcular Granulometria", type="primary"):
         
         registros_muestra = df.to_dict(orient='records')
 
+        # Calculo exacto y automatico del TMA basandonos en la nueva matriz inyectada
         tma_mm = 76.200
         tma_nombre = '3"'
-        idx_tma_en_serie = 0
-        encontrado_material = False
+        idx_tma_en_procesados = 0
         
-        for indice, (ab, nom) in enumerate(serie_completa):
-            peso_t = pesos_ingresados.get(nom, 0.0)
-            if peso_t > 0.001:
-                encontrado_material = True
-                if indice == 0:
-                    tma_mm = ab
-                    tma_nombre = nom
-                    idx_tma_en_serie = 0
+        for idx_p, reg in enumerate(registros_muestra):
+            if reg['Abertura (mm)'] > 0.001 and reg['Peso Retenido (g)'] > 0.001:
+                if idx_p == 0:
+                    tma_mm = reg['Abertura (mm)']
+                    tma_nombre = reg['Tamiz']
+                    idx_tma_en_procesados = 0
                 else:
-                    idx_tma_en_serie = indice - 1
-                    tma_mm = serie_completa[idx_tma_en_serie][0]
-                    tma_nombre = serie_completa[idx_tma_en_serie][1]
+                    idx_tma_en_procesados = idx_p - 1
+                    tma_mm = registros_muestra[idx_tma_en_procesados]['Abertura (mm)']
+                    tma_nombre = registros_muestra[idx_tma_en_procesados]['Tamiz']
                 break
-                
-        if not encontrado_material:
-            tma_nombre, tma_mm = 'N° 200', 0.074
-            idx_tma_en_serie = len(serie_completa) - 1
 
+        # Calculo exacto del TMN evaluando el tamiz inmediatamente inferior en la serie resultante
         tmn_mm = tma_mm
         tmn_nombre = tma_nombre
         
-        idx_tma_activo = -1
-        for i, (ab, nom) in enumerate(tamices_activos):
-            if nom == tma_nombre:
-                idx_tma_activo = i
-                break
-                
-        if idx_tma_activo != -1 and idx_tma_activo + 1 < len(tamices_activos):
-            ab_inf, nom_inf = tamices_activos[idx_tma_activo + 1]
-            pasa_inf_valor = 0.0
-            for reg in registros_muestra:
-                if reg['Tamiz'] == nom_inf:
-                    pasa_inf_valor = reg['% Que Pasa']
-                    break
-            if 90.0 <= pasa_inf_valor < 100.0:
-                tmn_mm = ab_inf
-                tmn_nombre = nom_inf
+        if idx_tma_en_procesados + 1 < len(registros_muestra):
+            reg_inf = registros_muestra[idx_tma_en_procesados + 1]
+            if reg_inf['Abertura (mm)'] > 0.001:
+                pasa_inf_valor = reg_inf['% Que Pasa']
+                if 90.0 <= pasa_inf_valor < 100.0:
+                    tmn_mm = reg_inf['Abertura (mm)']
+                    tmn_nombre = reg_inf['Tamiz']
 
+        # Clasificacion automatica MOP
         pasa_n4 = 50.0
         pasa_n200 = 0.0
         for reg in registros_muestra:
