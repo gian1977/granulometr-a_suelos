@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Mecanica de Suelos - Granulometria", layout="wide")
-
 st.title("📊 Ensayo de Granulometria por Tamizado")
 st.subheader("Manual de Carreteras v.8.202.3 / Adaptacion NCh 165")
 
@@ -11,7 +10,7 @@ st.sidebar.header("1. Datos del Cuarteo")
 masa_total = st.sidebar.number_input("Masa Total de muestra a tamizar (g)", min_value=0.1, value=4500.0, step=1.0)
 
 st.header("2. Configuracion de Tamices y Registro de Pesos")
-st.write("Active los tamices que utilizo en el ensayo e ingrese sus pesos retenidos in gramos:")
+st.write("Active los tamices que utilizo en el ensayo e ingrese sus pesos retenidos en gramos:")
 
 serie_completa = [
     (76.200, '3"'), (63.500, '2 1/2"'), (50.600, '2"'), (38.100, '1 1/2"'),
@@ -24,12 +23,11 @@ serie_completa = [
 
 pesos_ingresados = {}
 tamices_activos = []
-
 col1, col2, col3 = st.columns(3)
+
 for i, (abertura, tamiz) in enumerate(serie_completa):
     label_check = f"Utilizar {tamiz} ({abertura:.3f} mm)"
     label_peso = f"Retenido {tamiz} (g)"
-    
     if i % 3 == 0:
         with col1:
             activo = st.checkbox(label_check, value=True, key=f"check_{tamiz}")
@@ -42,7 +40,6 @@ for i, (abertura, tamiz) in enumerate(serie_completa):
         with col3:
             activo = st.checkbox(label_check, value=True, key=f"check_{tamiz}")
             peso = st.number_input(label_peso, min_value=0.0, value=0.0, step=0.1, key=f"peso_{tamiz}") if activo else 0.0
-            
     if activo:
         tamices_activos.append((abertura, tamiz))
         pesos_ingresados[tamiz] = peso
@@ -68,16 +65,29 @@ if st.button("Calcular Granulometria", type="primary"):
         df.loc[df['Tamiz'] == 'Residuo', '% Que Pasa'] = 0.0
         
         registros_muestra = df.to_dict(orient='records')
-        
+
         tma_mm = 76.200
         tma_nombre = '3"'
+        idx_tma_en_serie = 0
+        encontrado_material = False
         
-        for ab, nom in serie_completa:
+        for indice, (ab, nom) in enumerate(serie_completa):
             peso_t = pesos_ingresados.get(nom, 0.0)
             if peso_t > 0.001:
-                tma_mm = ab
-                tma_nombre = nom
+                encontrado_material = True
+                if indice == 0:
+                    tma_mm = ab
+                    tma_nombre = nom
+                    idx_tma_en_serie = 0
+                else:
+                    idx_tma_en_serie = indice - 1
+                    tma_mm = serie_completa[idx_tma_en_serie][0]
+                    tma_nombre = serie_completa[idx_tma_en_serie][1]
                 break
+                
+        if not encontrado_material:
+            tma_nombre, tma_mm = 'N° 200', 0.074
+            idx_tma_en_serie = len(serie_completa) - 1
 
         tmn_mm = tma_mm
         tmn_nombre = tma_nombre
@@ -102,10 +112,8 @@ if st.button("Calcular Granulometria", type="primary"):
         pasa_n4 = 50.0
         pasa_n200 = 0.0
         for reg in registros_muestra:
-            if reg['Tamiz'] == 'N° 4':
-                pasa_n4 = reg['% Que Pasa']
-            if reg['Tamiz'] == 'N° 200':
-                pasa_n200 = reg['% Que Pasa']
+            if reg['Tamiz'] == 'N° 4': pasa_n4 = reg['% Que Pasa']
+            if reg['Tamiz'] == 'N° 200': pasa_n200 = reg['% Que Pasa']
                 
         grava_pct = 100.0 - pasa_n4
         arena_pct = pasa_n4 - pasa_n200
@@ -120,20 +128,19 @@ if st.button("Calcular Granulometria", type="primary"):
                 clasificacion_mop = f"SUELO GRUESO: ARENA (Contenido de Finos: {fino_pct:.2f}%)"
 
         st.header("3. Matriz de Resultados y Clasificacion")
-        
         col_tma, col_tmn, col_clas = st.columns(3)
         with col_tma: st.metric(label="Tamaño Maximo Absoluto (TMA)", value=f"{tma_nombre}")
         with col_tmn: st.metric(label="Tamaño Maximo Nominal (TMN)", value=f"{tmn_nombre}")
         with col_clas: st.metric(label="Clasificacion del Suelo (MOP)", value=clasificacion_mop)
             
         if porcentaje_error <= 1.0:
-            st.success(f"✅ Ensayo Aprobado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Limite normativo <= 1%.")
+            st.success(f"✅ Ensayo Aprobado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%).")
         else:
-            st.error(f"❌ Ensayo Rechazado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Supera la tolerancia del 1%.")
+            st.error(f"❌ Ensayo Rechazado. Perdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%).")
             
         df_visual = df.copy().round(2)
         st.dataframe(df_visual, use_container_width=True, hide_index=True)
-        
+
         lista_banda_tm25 = [
             {"abertura": 25.400, "minimo": 100.0, "maximo": 100.0},
             {"abertura": 19.050, "minimo": 70.0, "maximo": 100.0},
@@ -160,13 +167,11 @@ if st.button("Calcular Granulometria", type="primary"):
         nombre_banda_activa = "TM-25" if tma_mm <= 25.405 else "TM-50"
             
         st.header(f"4. Curva Granulometrica con Limites Banda Vial {nombre_banda_activa}")
-        
         df_suelos_filtrado = df[df['Abertura (mm)'] > 0].copy()
         df_grafico = df_suelos_filtrado[df_suelos_filtrado['Abertura (mm)'] <= tma_mm].copy()
         
         if not df_grafico.empty:
             fig, ax = plt.subplots(figsize=(11, 5.5))
-            
             ax.plot(df_grafico['Abertura (mm)'], df_grafico['% Que Pasa'], marker='o', markerfacecolor='white', markeredgecolor='black', color='black', linewidth=2, label='Muestra Suelo')
             
             aberturas_b = [item["abertura"] for item in lista_activa]
@@ -179,7 +184,6 @@ if st.button("Calcular Granulometria", type="primary"):
 
             ax.plot([4.760, 4.760], [-20, 110], color='mediumvioletred', linewidth=1.5, linestyle='-')
             ax.plot([4.760, 4.760], [-20, 110], marker='o', markersize=5, color='gold', markeredgecolor='darkred', linestyle='')
-            
             ax.plot([0.074, 0.074], [-20, 110], color='indigo', linewidth=1.5, linestyle='-')
             ax.plot([0.074, 0.074], [-20, 110], marker='o', markersize=5, color='gold', markeredgecolor='darkred', linestyle='')
 
@@ -196,7 +200,6 @@ if st.button("Calcular Granulometria", type="primary"):
             valores_eje_x = [100.0, 10.0, 1.0, 0.1, 0.01]
             ax.set_xticks(valores_eje_x)
             ax.set_xticklabels([f"{x:g}" for x in valores_eje_x])
-            
             st.pyplot(fig)
             
             fuera_de_banda = False
@@ -206,7 +209,6 @@ if st.button("Calcular Granulometria", type="primary"):
                 mm_ref = item_b["abertura"]
                 lim_min = item_b["minimo"]
                 lim_max = item_b["maximo"]
-                
                 for reg in registros_muestra:
                     if abs(reg['Abertura (mm)'] - mm_ref) < 0.1:
                         pasa_t = reg['% Que Pasa']
