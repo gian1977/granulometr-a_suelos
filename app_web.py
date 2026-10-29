@@ -451,9 +451,16 @@ if st.button("📊 Compilar Datos y Procesar Planilla Excel"):
             xl_img = OpenpyxlImage(img_buf)
             ws.add_image(xl_img, 'I4')
 
-    for col in ws.columns:
-        max_len = max(len(str(cell.value or '')) for cell in col)
-        ws.column_dimensions[col.column_letter].width = max(max_len + 3, 12)
+        # Ajuste manual y rígido del ancho de las columnas (idéntico a la planilla piloto)
+    ws.column_dimensions['A'].width = 3
+    ws.column_dimensions['B'].width = 15  # Abertura mm
+    ws.column_dimensions['C'].width = 15  # Tamiz
+    ws.column_dimensions['D'].width = 18  # Masa Retenida
+    ws.column_dimensions['E'].width = 14  # % Retenido
+    ws.column_dimensions['F'].width = 14  # % Acumulado
+    ws.column_dimensions['G'].width = 14  # % Que Pasa
+    ws.column_dimensions['H'].width = 4   # Espacio separador
+
 
     # Almacenar el archivo binario final en la sesión persistente
     excel_file = io.BytesIO()
