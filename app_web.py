@@ -305,7 +305,13 @@ if st.button("📊 Compilar Datos y Procesar Planilla Excel"):
     wb = Workbook()
     ws = wb.active
     ws.title = "Granulometría MOP"
-    ws.views.sheetView.showGridLines = True
+    
+    # --- CORRECCIÓN RIGIDA PARA LÍNEAS DE CUADRICULA ---
+    try:
+        ws.views.sheetView[0].showGridLines = True
+    except Exception:
+        pass
+    # ----------------------------------------------------
     
     # Estilos Globales
     font_title = Font(name="Arial", size=11, bold=True)
