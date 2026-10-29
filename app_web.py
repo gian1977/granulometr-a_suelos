@@ -263,3 +263,216 @@ if st.button("Calcular Granulometria", type="primary"):
                 st.error("❌ El material NO cumple con los requisitos del Manual de Carreteras para ser utilizado como Base Granular debido a las desviaciones indicadas.")
         else:
             st.warning("No hay suficientes datos para graficar.")
+
+import io
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.drawing.image import Image as OpenpyxlImage
+
+# =============================================================================
+# MÓDULO DE EXPORTACIÓN A EXCEL (NORMA MOP 8.102.1.A & NCh 165)
+# =============================================================================
+
+st.markdown("---")
+st.subheader("📄 Generación de Informe Oficial")
+
+# Formulario para metadatos del encabezado requerido por la norma
+with st.container():
+    col_meta1, col_meta2 = st.columns(2)
+    with col_meta1:
+        cert_no = st.text_input("Certificado de ensaye N°:", "001-2026")
+        camino_obra = st.text_input("Camino u Obra:", "Ruta 5 Norte - Tramo Copiapó")
+        responsable = st.text_input("Responsable ensaye:", "Prof. Mecánica de Suelos")
+    with col_meta2:
+        f_muestreo = st.date_input("Fecha de muestreo:")
+        f_ensaye = st.date_input("Fecha de ensaye:")
+        jefe_lab = st.text_input("V°B° Jefe Laboratorio:", "Ing. Control de Calidad")
+
+# Botón de exportación
+if st.button("📊 Generar y Descargar Planilla Excel Oficial"):
+    
+    # 1. Crear libro y configurar hoja
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Granulometría MOP"
+    ws.views.sheetView[0].showGridLines = True
+    
+    # Estilos Globales (Clásicos de Laboratorio)
+    font_title = Font(name="Arial", size=11, bold=True)
+    font_sub = Font(name="Arial", size=9, bold=True)
+    font_body = Font(name="Arial", size=9)
+    font_formula = Font(name="Arial", size=8, italic=True, color="555555")
+    
+    fill_header = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
+    fill_accent = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    
+    thin_border = Border(
+        left=Side(style='thin', color='000000'),
+        right=Side(style='thin', color='000000'),
+        top=Side(style='thin', color='000000'),
+        bottom=Side(style='thin', color='000000')
+    )
+    
+    align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    align_left = Alignment(horizontal='left', vertical='center')
+    align_right = Alignment(horizontal='right', vertical='center')
+
+    # 2. Reconstrucción Estricta del Encabezado (Filas 1 a 3)
+    ws.merge_cells('B1:E3')
+    ws['B1'] = "ENSAYO GRANULOMÉTRICO DE SUELOS\n\n8.102.1.A"
+    ws['B1'].font = font_title
+    ws['B1'].alignment = align_center
+    ws['B1'].fill = fill_header
+    
+    ws['F1'] = "MANUAL DE CARRETERAS - VOL. N° 8"
+    ws['F1'].font = font_sub
+    ws['F2'] = "PAG. 1 de 1"
+    ws['F2'].font = font_body
+    ws['F3'] = "Ver. 002"
+    ws['F3'].font = font_body
+    
+    for row in range(1, 4):
+        for col in range(2, 7):
+            ws.cell(row=row, column=col).border = thin_border
+
+    # 3. Bloque de Metadatos de la Muestra (Filas 5 a 10)
+    metadata = [
+        ("Certificado de ensaye N°:", cert_no, "Fecha de muestreo :", str(f_muestreo)),
+        ("Camino u Obra:", camino_obra, "Fecha de ensaye :", str(f_ensaye)),
+        ("TMA muestra de ensaye :", f"{st.session_state.get('tma', 0)} mm", "Banda Vial Activada:", str(st.session_state.get('banda_activa', 'S/B'))),
+        ("TMN calculado:", f"{st.session_state.get('tmn', 0)} mm", "Clasificación/Criterio:", "Ajustado a Banda")
+    ]
+    
+    current_row = 5
+    for m in metadata:
+        ws.cell(row=current_row, column=2, value=m[0]).font = font_sub
+        ws.cell(row=current_row, column=3, value=m[1]).font = font_body
+        ws.cell(row=current_row, column=5, value=m[2]).font = font_sub
+        ws.cell(row=current_row, column=6, value=m[3]).font = font_body
+        current_row += 1
+
+       # =============================================================================
+    # 4. TABLA DINÁMICA DE TAMIZADO (CONEXIÓN BLINDADA CON EL BACKEND)
+    # =============================================================================
+    headers_tabla = ["Abertura mm", "Tamiz", "Masa Retenida (g)", "% Retenido", "% Acumulado", "% Que Pasa"]
+    start_row_tabla = 10
+    
+    for c_idx, h in enumerate(headers_tabla, start=2):
+        cell = ws.cell(row=start_row_tabla, column=c_idx, value=h)
+        cell.font = font_sub
+        cell.fill = fill_header
+        cell.alignment = align_center
+        cell.border = thin_border
+
+    # Intentar recuperar el DataFrame dinámico desde las variables comunes de Streamlit
+    # Si su DataFrame se llama de otra forma (ej. df_mallas), cámbielo abajo donde dice "df_resultado"
+    df_activa = None
+    
+    # 1. Intento por variables globales conocidas
+    for var_name in ['df', 'df_resultado', 'df_gran', 'datos_tabla', 'df_final']:
+        if var_name in globals():
+            df_activa = globals()[var_name]
+            break
+            
+    # 2. Intento por Session State si la app almacena allí la matriz calculada
+    if df_activa is None:
+        for key in st.session_state.keys():
+            if isinstance(st.session_state[key], pd.DataFrame):
+                df_activa = st.session_state[key]
+                break
+
+    # Si se encuentra la matriz, se inyecta dinámicamente al Excel
+    if df_activa is not None:
+        row_idx = start_row_tabla + 1
+        for index, row in df_activa.iterrows():
+            # Mapeo flexible de columnas por posición (0=Abertura, 1=Tamiz, 2=Masa, etc.) 
+            # para no depender de nombres estrictos de columnas de texto
+            ws.cell(row=row_idx, column=2, value=row.iloc[0]).alignment = align_center
+            ws.cell(row=row_idx, column=3, value=str(row.iloc[1])).alignment = align_center
+            ws.cell(row=row_idx, column=4, value=row.iloc[2]).alignment = align_right
+            ws.cell(row=row_idx, column=5, value=row.iloc[3]).alignment = align_right
+            ws.cell(row=row_idx, column=6, value=row.iloc[4]).alignment = align_right
+            ws.cell(row=row_idx, column=7, value=row.iloc[5]).alignment = align_right
+            
+            for c in range(2, 8):
+                ws.cell(row=row_idx, column=c).font = font_body
+                ws.cell(row=row_idx, column=c).border = thin_border
+                if c >= 4:
+                    try:
+                        ws.cell(row=row_idx, column=c).number_format = '0.0'
+                    except:
+                        pass
+            row_idx += 1
+    else:
+        # Fila de respaldo por si el backend aún no procesa datos al cargar la app
+        row_idx = start_row_tabla + 1
+        ws.cell(row=row_idx, column=2, value="Esperando datos del backend...").font = font_formula
+        row_idx += 1
+
+
+       # =============================================================================
+    # 5. EXPÓSITOS Y EXPRESIONES MATEMÁTICAS OFICIALES (TRANSCRIPCIÓN FIEL DEL PDF)
+    # =============================================================================
+    row_idx += 2
+    
+    # Matriz tipográfica exacta según el formato PDF original de INACAP
+    formulas_text = [
+        "𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂 − 𝑻𝒐𝒕𝒂𝒍 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐", # Numerador de la ecuación de error
+        "𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂",                  # Denominador de la ecuación de error
+        "𝑴𝒂𝒔𝒂 𝑹𝒆𝒕𝒆𝒏. 𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂",                    # Numerador del % Retenido
+        "𝑴𝒂𝒔𝒂 𝑻𝒐𝒕𝒂𝒍 𝒅𝒆 𝒎𝒖𝒆𝒔𝒕𝒓𝒂 𝒄𝒐𝒓𝒓𝒆𝒈𝒊𝒅𝒂 𝒙 𝟏𝟎𝟎"     # Denominador del % Retenido
+    ]
+    
+    # Celda de % Error: Simbología Griega Épsilon Clásica (𝜺) y variables en negrita cursiva
+    ws.cell(row=row_idx, column=2, value="" ) # Limpieza previa
+    ws.cell(row=row_idx, column=2, value="% 𝜺 = 𝑽𝒂𝒍𝒐𝒓 𝑨𝒃𝒔𝒐𝒍𝒖𝒕𝒐 (  " + formulas_text[0] + "  /  " + formulas_text[1] + "  ) x 100 (%)").font = font_formula
+    
+    row_idx += 2
+    # Celda de % Retenido: Relación de masas corregidas
+    ws.cell(row=row_idx, column=2, value="% 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐 = (  " + formulas_text[2] + "  /  " + formulas_text[3] + "  )").font = font_formula
+    
+    row_idx += 2
+    # Celda de % Retenido Acumulado: Sumatoria del tamiz y el anterior
+    ws.cell(row=row_idx, column=2, value="% 𝑹𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒂𝒄𝒖𝒎𝒖𝒍𝒂𝒅𝒐 = % 𝒓𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒆𝒏 𝒕𝒂𝒎𝒊𝒛 + % 𝒓𝒆𝒕𝒆𝒏𝒊𝒅𝒐 𝒂𝒄𝒖𝒎𝒖𝒍. 𝒂𝒏𝒕𝒆𝒓𝒊𝒐𝒓").font = font_formula
+    
+    row_idx += 2
+    # Celda de % Acumulado que Pasa: Complemento al 100%
+    ws.cell(row=row_idx, column=2, value="% 𝑨𝒄𝒖𝒎𝒖𝒍𝒂𝒅𝒐 𝒒𝒖𝒆 𝑷𝒂𝒔𝒂 = 𝟏𝟎𝟎 − % 𝑹𝒆𝒕𝒆𝒏.𝑨𝒄𝒖𝒎𝒖𝒍. 𝒆𝒏 𝒕𝒂𝒎𝒊𝒛").font = font_formula
+
+
+    # 6. Firmas de Responsabilidad
+    row_idx += 1
+    ws.cell(row=row_idx, column=2, value=f"Responsable ensaye: {responsable}").font = font_body
+    ws.cell(row=row_idx+1, column=2, value=f"V°B° Jefe Laboratorio: {jefe_lab}").font = font_body
+
+    # 7. EXPORTACIÓN INMUNE DEL GRÁFICO (Matplotlib -> Excel)
+    img_buf = io.BytesIO()
+    # Guardamos la figura rígida de la app a un flujo de bytes en alta resolución
+    fig.savefig(img_buf, format='png', dpi=150, bbox_inches='tight')
+    img_buf.seek(0)
+    
+    xl_img = OpenpyxlImage(img_buf)
+    # Se posiciona a la derecha de los datos para no solapar columnas dinámicas
+    ws.add_image(xl_img, 'I4')
+
+    # Ajuste automático del ancho de columnas para legibilidad
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        col_letter = col[0].column_letter
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    # 8. Generación del stream de descarga para Streamlit
+    excel_file = io.BytesIO()
+    wb.save(excel_file)
+    excel_file.seek(0)
+    
+    st.download_button(
+        label="📥 Descargar *.xlsx Certificado",
+        data=excel_file,
+        file_name=f"Informe_Granulometria_{cert_no}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    st.success("¡Planilla generada con éxito de acuerdo al formato 8.102.1.A!")
