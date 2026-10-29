@@ -2,21 +2,17 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Configuración de la página web
 st.set_page_config(page_title="Mecánica de Suelos - Granulometría", layout="wide")
 
 st.title("📊 Ensayo de Granulometría por Tamizado")
 st.subheader("Manual de Carreteras v.8.202.3 / Adaptación NCh 165")
 
-# --- 1. SECCIÓN DE DATOS INICIALES ---
 st.sidebar.header("1. Datos del Cuarteo")
 masa_total = st.sidebar.number_input("Masa Total de muestra a tamizar (g)", min_value=0.1, value=4500.0, step=1.0)
 
-# --- 2. SECCIÓN DE SELECCIÓN E INGRESO DE PESOS RETENIDOS ---
 st.header("2. Configuración de Tamices y Registro de Pesos")
 st.write("Active los tamices que utilizó en el ensayo e ingrese sus pesos retenidos en gramos:")
 
-# Serie completa ASTM de referencia ordenada de mayor a menor
 serie_completa = [
     (76.200, '3"'), (63.500, '2 1/2"'), (50.600, '2"'), (38.100, '1 1/2"'),
     (25.400, '1"'), (19.050, '3/4"'), (12.700, '1/2"'), (9.525, '3/8"'),
@@ -29,9 +25,7 @@ serie_completa = [
 pesos_ingresados = {}
 tamices_activos = []
 
-# Distribución visual en 3 columnas
 col1, col2, col3 = st.columns(3)
-
 for i, (abertura, tamiz) in enumerate(serie_completa):
     label_check = f"Utilizar {tamiz} ({abertura:.3f} mm)"
     label_peso = f"Retenido {tamiz} (g)"
@@ -56,74 +50,92 @@ for i, (abertura, tamiz) in enumerate(serie_completa):
 st.markdown("---")
 pesos_ingresados['Residuo'] = st.number_input("Residuo / Fondo (g)", min_value=0.0, value=0.0, step=0.1, key='Residuo')
 
-# --- 3. PROCESAMIENTO Y CÁLCULOS ---
 if st.button("Calcular Granulometría", type="primary"):
     if not tamices_activos:
         st.error("❌ Debe seleccionar al menos un tamiz para realizar los cálculos.")
     else:
-        # Estructurar DataFrame dinámico
         lista_dinamica = tamices_activos + [(0.000, 'Residuo')]
         df = pd.DataFrame(lista_dinamica, columns=['Abertura (mm)', 'Tamiz'])
         df['Peso Retenido (g)'] = df['Tamiz'].map(pesos_ingresados).fillna(0.0)
         
-        # Control de calidad
         suma_total_retenido = df['Peso Retenido (g)'].sum()
         error_gramos = masa_total - suma_total_retenido
         porcentaje_error = (abs(error_gramos) / masa_total) * 100
         
-        # Cálculos de columnas
         df['% Peso Retenido'] = (df['Peso Retenido (g)'] / masa_total) * 100
         df['% Peso Ret. Acumul.'] = df['% Peso Retenido'].cumsum()
-        df['% Que Pasa'] = 100 - df['% Peso Ret. Acumul.']
+        df['% Que Pasa'] = 100.0 - df['% Peso Ret. Acumul.']
         df.loc[df['Tamiz'] == 'Residuo', '% Que Pasa'] = 0.0
         
-        # --- LÓGICA AUTOMÁTICA DE TMA Y TMN BASADA EN LA SERIE COMPLETA ---
-        df_suelos = df[df['Abertura (mm)'] > 0].copy().reset_index(drop=True)
-        df_con_material = df_suelos[df_suelos['Peso Retenido (g)'] > 0.001]
+        registros_muestra = df.to_dict(orient='records')
         
-        if not df_con_material.empty:
-            tamiz_primer_retenido = df_con_material.iloc[0]['Tamiz']
-            idx_en_serie_completa = [x[1] for x in serie_completa].index(tamiz_primer_retenido)
-            
-            if idx_en_serie_completa == 0:
-                tma_mm = serie_completa[idx_en_serie_completa][0]
-                tma_nombre = serie_completa[idx_en_serie_completa][1]
-                idx_tma_evaluacion = idx_en_serie_completa
-            else:
-                idx_tma_evaluacion = idx_en_serie_completa - 1
-                tma_mm = serie_completa[idx_tma_evaluacion][0]
-                tma_nombre = serie_completa[idx_tma_evaluacion][1]
-            
-            if idx_tma_evaluacion + 1 < len(serie_completa):
-                tamiz_inferior_nombre = serie_completa[idx_tma_evaluacion + 1][1]
-                fila_inferior_real = df[df['Tamiz'] == tamiz_inferior_nombre]
-                
-                if not fila_inferior_real.empty:
-                    pasa_inferior = fila_inferior_real.iloc[0]['% Que Pasa']
-                    if 90.0 <= pasa_inferior < 100.0:
-                        tmn_mm = serie_completa[idx_tma_evaluacion + 1][0]
-                        tmn_nombre = tamiz_inferior_nombre
-                    else:
-                        tmn_mm = tma_mm
-                        tmn_nombre = tma_nombre
+        tma_mm = 76.200
+        tma_nombre = '3"'
+        idx_tma_en_serie = 0
+        
+        encontrado_retenido = False
+        for indice, (ab, nom) in enumerate(serie_completa):
+            peso_t = pesos_ingresados.get(nom, 0.0)
+            if peso_t > 0.001:
+                encontrado_retenido = True
+                if indice == 0:
+                    tma_mm = ab
+                    tma_nombre = nom
+                    idx_tma_en_serie = 0
                 else:
-                    tmn_mm = tma_mm
-                    tmn_nombre = tma_nombre
-            else:
-                tmn_mm = tma_mm
-                tmn_nombre = tma_nombre
-        else:
+                    idx_tma_en_serie = indice - 1
+                    tma_mm = serie_completa[idx_tma_en_serie][0]
+                    tma_nombre = serie_completa[idx_tma_en_serie][1]
+                break
+                
+        if not encontrado_retenido:
             tma_nombre, tma_mm = 'N° 200', 0.074
-            tmn_nombre, tmn_mm = 'N° 200', 0.074
+            idx_tma_en_serie = len(serie_completa) - 1
 
-        # --- PRESENTACIÓN DE RESULTADOS ---
-        st.header("3. Matriz de Resultados")
+        tmn_mm = tma_mm
+        tmn_nombre = tma_nombre
         
-        col_tma, col_tmn = st.columns(2)
-        with col_tma:
-            st.metric(label="Tamaño Máximo Absoluto (TMA)", value=f"{tma_nombre} ({tma_mm:.3f} mm)")
-        with col_tmn:
-            st.metric(label="Tamaño Máximo Nominal (TMN)", value=f"{tmn_nombre} ({tmn_mm:.3f} mm)")
+        if idx_tma_en_serie + 1 < len(serie_completa):
+            nom_inferior = serie_completa[idx_tma_en_serie + 1][1]
+            ab_inferior = serie_completa[idx_tma_en_serie + 1][0]
+            
+            pasa_inf_valor = None
+            for reg in registros_muestra:
+                if reg['Tamiz'] == nom_inferior:
+                    pasa_inf_valor = reg['% Que Pasa']
+                    break
+                    
+            if pasa_inf_valor is not None:
+                if 90.0 <= pasa_inf_valor < 100.0:
+                    tmn_mm = ab_inferior
+                    tmn_nombre = nom_inferior
+
+        pasa_n4 = 50.0
+        pasa_n200 = 0.0
+        for reg in registros_muestra:
+            if reg['Tamiz'] == 'N° 4':
+                pasa_n4 = reg['% Que Pasa']
+            if reg['Tamiz'] == 'N° 200':
+                pasa_n200 = reg['% Que Pasa']
+                
+        grava_pct = 100.0 - pasa_n4
+        arena_pct = pasa_n4 - pasa_n200
+        fino_pct = pasa_n200
+        
+        if fino_pct > 50.0:
+            clasificacion_mop = "SUELO FINO (Limos / Arcillas)"
+        else:
+            if grava_pct > arena_pct:
+                clasificacion_mop = f"SUELO GRUESO: GRAVA (Contenido de Finos: {fino_pct:.2f}%)"
+            else:
+                clasificacion_mop = f"SUELO GRUESO: ARENA (Contenido de Finos: {fino_pct:.2f}%)"
+
+        st.header("3. Matriz de Resultados y Clasificación")
+        
+        col_tma, col_tmn, col_clas = st.columns(3)
+        with col_tma: st.metric(label="Tamaño Máximo Absoluto (TMA)", value=f"{tma_nombre}")
+        with col_tmn: st.metric(label="Tamaño Máximo Nominal (TMN)", value=f"{tmn_nombre}")
+        with col_clas: st.metric(label="Clasificación del Suelo (MOP)", value=clasificacion_mop)
             
         if porcentaje_error <= 1.0:
             st.success(f"✅ Ensayo Aprobado. Pérdida de masa: {error_gramos:.1f} g ({porcentaje_error:.2f}%). Límite normativo <= 1%.")
@@ -133,48 +145,89 @@ if st.button("Calcular Granulometría", type="primary"):
         df_visual = df.copy().round(2)
         st.dataframe(df_visual, use_container_width=True, hide_index=True)
         
-        # --- 4. GRÁFICO SEMILOGARÍTMICO ESTILO PLANILLA ---
-        st.header("4. Curva Granulométrica Semilogarítmica")
+        lista_banda_tm25 = [
+            {"abertura": 25.400, "minimo": 100.0, "maximo": 100.0},
+            {"abertura": 19.050, "minimo": 70.0, "maximo": 100.0},
+            {"abertura": 9.525, "minimo": 50.0, "maximo": 80.0},
+            {"abertura": 4.760, "minimo": 35.0, "maximo": 65.0},
+            {"abertura": 2.000, "minimo": 25.0, "maximo": 50.0},
+            {"abertura": 0.300, "minimo": 10.0, "maximo": 30.0},
+            {"abertura": 0.074, "minimo": 0.0, "maximo": 15.0}
+        ]
         
-        # Graficar desde el TMA hacia abajo en la serie estándar
-        df_grafico = df_suelos[df_suelos['Abertura (mm)'] <= tma_mm].copy()
+        lista_banda_tm50 = [
+            {"abertura": 50.600, "minimo": 100.0, "maximo": 100.0},
+            {"abertura": 38.100, "minimo": 70.0, "maximo": 100.0},
+            {"abertura": 25.400, "minimo": 55.0, "maximo": 85.0},
+            {"abertura": 19.050, "minimo": 50.0, "maximo": 80.0},
+            {"abertura": 9.525, "minimo": 40.0, "maximo": 70.0},
+            {"abertura": 4.760, "minimo": 30.0, "maximo": 60.0},
+            {"abertura": 2.000, "minimo": 20.0, "maximo": 45.0},
+            {"abertura": 0.300, "minimo": 10.0, "maximo": 25.0},
+            {"abertura": 0.074, "minimo": 2.0, "maximo": 15.0}
+        ]
+        
+        lista_activa = lista_banda_tm25 if tma_mm <= 25.400 else lista_banda_tm50
+        nombre_banda_activa = "TM-25" if tma_mm <= 25.400 else "TM-50"
+            
+        st.header(f"4. Curva Granulométrica con Límites Banda Vial {nombre_banda_activa}")
+        
+        df_suelos_filtrado = df[df['Abertura (mm)'] > 0].copy()
+        df_grafico = df_suelos_filtrado[df_suelos_filtrado['Abertura (mm)'] <= tma_mm].copy()
         
         if not df_grafico.empty:
             fig, ax = plt.subplots(figsize=(11, 5.5))
             
-            # Dibujar la curva del suelo
-            ax.plot(df_grafico['Abertura (mm)'], df_grafico['% Que Pasa'], marker='o', markerfacecolor='white', markeredgecolor='black', color='black', linewidth=1.5, label='Granulometria')
+            ax.plot(df_grafico['Abertura (mm)'], df_grafico['% Que Pasa'], marker='o', markerfacecolor='white', markeredgecolor='black', color='black', linewidth=2, label='Muestra Suelo')
             
-            # --- LÍNEAS DE CORTE ESTILO PLANILLA EXCEL ---
-            # Línea de corte N° 4 (4.760 mm) - Separación Grava/Arena
-            ax.plot([4.760, 4.760], [-10, 100], color='mediumvioletred', linewidth=2, linestyle='-', label='Grava')
-            ax.plot([4.760, 4.760], [-10, 100], marker='o', markersize=6, color='gold', markeredgecolor='darkred', linestyle='')
+            aberturas_b = [item["abertura"] for item in lista_activa]
+            minimos_b = [item["minimo"] for item in lista_activa]
+            maximos_b = [item["maximo"] for item in lista_activa]
             
-            # Línea de corte N° 200 (0.074 mm) - Separación Arena/Fino
-            ax.plot([0.074, 0.074], [-10, 100], color='indigo', linewidth=2, linestyle='-', label='Areana')
-            ax.plot([0.074, 0.074], [-10, 100], marker='o', markersize=6, color='gold', markeredgecolor='darkred', linestyle='')
+            ax.plot(aberturas_b, minimos_b, color='red', linestyle='--', linewidth=1.5, label='Límite Inferior')
+            ax.plot(aberturas_b, maximos_b, color='red', linestyle='--', linewidth=1.5, label='Límite Superior')
+            ax.fill_between(aberturas_b, minimos_b, maximos_b, color='red', alpha=0.05, label='Zona Conforme')
 
-            # Configuración estricta de escalas y límites
-            ax.set_xscale('log')
+            ax.plot([4.760, 4.760], [-20, 110], color='mediumvioletred', linewidth=1.5, linestyle='-')
+            ax.plot([4.760, 4.760], [-20, 110], marker='o', markersize=5, color='gold', markeredgecolor='darkred', linestyle='')
             
-            # Holgura visual automática en eje X: Comienza en el ciclo logarítmico superior al TMA y termina en 0.01 mm
+            ax.plot([0.074, 0.074], [-20, 110], color='indigo', linewidth=1.5, linestyle='-')
+            ax.plot([0.074, 0.074], [-20, 110], marker='o', markersize=5, color='gold', markeredgecolor='darkred', linestyle='')
+
+            ax.set_xscale('log')
             lim_izquierdo = 100.0 if tma_mm > 10.0 else 10.0
             ax.set_xlim(lim_izquierdo, 0.01)
             ax.set_ylim(-10, 105)
             
-            # Cuadrícula logarítmica fina estilo papel técnico
             ax.grid(True, which='both', linestyle='-', linewidth=0.5, color='lightgray')
-            
-            # Etiquetas de los ejes solicitadas
             ax.set_xlabel("TAMAÑO DE TAMIZ (MM) - ESC. LOG", fontsize=10, fontweight='bold')
             ax.set_ylabel("% QUE PASA", fontsize=10, fontweight='bold')
             ax.legend(loc='upper right', fontsize=8)
             
-            # Formatear marcas principales en el eje X para que no se amontonen y sigan tu formato (100, 10, 1, 0.1, 0.01)
             valores_eje_x = [100.0, 10.0, 1.0, 0.1, 0.01]
             ax.set_xticks(valores_eje_x)
             ax.set_xticklabels([f"{x:g}" for x in valores_eje_x])
             
             st.pyplot(fig)
+            
+            fuera_de_banda = False
+            st.subheader("📋 Evaluación de Conformidad Vial")
+            
+            for item_b in lista_activa:
+                mm_ref = item_b["abertura"]
+                lim_min = item_b["minimo"]
+                lim_max = item_b["maximo"]
+                
+                for reg in registros_muestra:
+                    if abs(reg['Abertura (mm)'] - mm_ref) < 0.1:
+                        pasa_t = reg['% Que Pasa']
+                        if pasa_t < lim_min or pasa_t > lim_max:
+                            fuera_de_banda = True
+                            st.warning(f"⚠️ El tamiz {reg['Tamiz']} ({mm_ref:.2f} mm) está fuera de rango: Registra {pasa_t:.2f}%, el permitido es [{lim_min}% - {lim_max}%].")
+            
+            if not fuera_de_banda:
+                st.success(f"🎉 ¡Excelente! Todo el suelo se encuentra dentro de la banda {nombre_banda_activa} exigida por el Manual de Carreteras.")
+            else:
+                st.error("❌ El material NO cumple con los requisitos del Manual de Carreteras para ser utilizado como Base Granular debido a las desviaciones indicadas.")
         else:
-            st.warning("No hay suficientes datos para graficar con el recorte.")
+            st.warning("No hay suficientes datos para graficar.")
